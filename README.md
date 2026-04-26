@@ -88,11 +88,7 @@ dotnet run
 - **P2P only**: Прямой WebRTC DataChannel (без сервера)
 - **SERVER only**: HTTP multipart upload/download через сервер
 
-### Оптимизации (см. PERFORMANCE_IMPROVEMENTS.md)
-- **P2P**: Бина
-
-- **PROGRAM_OVERVIEW.md** — архитектура, потоки данных, сценарии
-- **PERFORMANCE_IMPROVEMENTS.md** — детали всех оптимизаций, метрики памяти
+### Результаты
 - P2P (500 MB): 666 MB → ~500 MB памяти
 - SERVER (500 MB): 500 MB → 64 KB буфера
 - P2P сообщения: 31,250 → 7,812 (75% снижение)
