@@ -1,0 +1,44 @@
+@using FileShareClient.Services
+@inject WindowControlService WindowControl
+
+<div @onmousedown="StartDrag"
+     @ondblclick="ToggleMaximize"
+     style="height: 36px; background: linear-gradient(90deg, #1f2937 0%, #111827 100%); color: #f9fafb; display: flex; align-items: center; justify-content: space-between; padding: 0 0 0 12px; user-select: none;">
+    <span style="font-size: 0.85rem; font-weight: 600;">@Title</span>
+    <div style="display: flex; align-items: stretch; height: 100%;">
+        <button @onmousedown:stopPropagation="true"
+                @onclick="Minimize"
+                style="width: 46px; border: none; background: transparent; color: #f9fafb; cursor: pointer; font-size: 14px;">─</button>
+        <button @onmousedown:stopPropagation="true"
+                @onclick="ToggleMaximize"
+                style="width: 46px; border: none; background: transparent; color: #f9fafb; cursor: pointer; font-size: 14px;">▭</button>
+        <button @onmousedown:stopPropagation="true"
+                @onclick="Close"
+                style="width: 46px; border: none; background: #b91c1c; color: #fff; cursor: pointer; font-size: 14px;">✕</button>
+    </div>
+</div>
+
+@code {
+    [Parameter]
+    public string Title { get; set; } = "FileShare";
+
+    private void Minimize()
+    {
+        WindowControl.Request(WindowCommand.Minimize);
+    }
+
+    private void ToggleMaximize()
+    {
+        WindowControl.Request(WindowCommand.ToggleMaximize);
+    }
+
+    private void Close()
+    {
+        WindowControl.Request(WindowCommand.Close);
+    }
+
+    private void StartDrag()
+    {
+        WindowControl.Request(WindowCommand.DragMove);
+    }
+}

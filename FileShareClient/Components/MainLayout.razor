@@ -1,0 +1,151 @@
+@using FileShareClient.Services
+@inherits LayoutComponentBase
+@inject ApiService ApiService
+@inject NavigationManager Navigation
+
+<div style="display: flex; height: 100vh;">
+    @if (ShowSidebar)
+    {
+        <aside style="width: 300px; border-right: 1px solid #ccc; overflow-y: auto;">
+            <div style="padding: 15px; border-bottom: 1px solid #ccc;">
+                <h3>FileShare</h3>
+                @if (CurrentUser != null)
+                {
+                    <p style="margin: 5px 0; font-size: 0.9em;">@CurrentUser.Username</p>
+                    <button @onclick="Logout" style="width: 100%; padding: 8px; background: #f0f0f0; border: 1px solid #ccc; cursor: pointer;">Выход</button>
+                }
+            </div>
+
+            @if (CurrentUser != null)
+            {
+                <div style="padding: 15px; border-bottom: 1px solid #ccc;">
+                    <h4>Друзья</h4>
+                    @if (Friends.Count > 0)
+                    {
+                        @foreach (var friend in Friends)
+                        {
+                            <div style="padding: 8px; cursor: pointer; background: @(SelectedFriend?.Id == friend.Id ? "#e0e0e0" : ""); border-radius: 4px; margin-bottom: 5px;"
+                                 @onclick="() => SelectFriend(friend)">
+                                <span>@friend.DisplayName</span>
+                                <span style="margin-left: 5px; color: @(friend.IsOnline ? "green" : "gray");">●</span>
+                            </div>
+                        }
+                    }
+                    else
+                    {
+                        <p style="font-size: 0.9em; color: #666;">Нет друзей</p>
+                    }
+                </div>
+
+                <div style="padding: 15px; border-bottom: 1px solid #ccc;">
+                    <h4>Запросы дружбы</h4>
+                    @if (PendingRequests.Count > 0)
+                    {
+                        @foreach (var request in PendingRequests)
+                        {
+                            <div style="padding: 8px; margin-bottom: 5px; border: 1px solid #ddd; border-radius: 4px;">
+                                <p style="margin: 0; font-size: 0.9em;">@request.User?.Username</p>
+                                <button @onclick="() => AcceptFriend(request.User?.Id ?? 0)" style="padding: 4px 8px; margin-right: 5px; background: #4CAF50; color: white; border: none; cursor: pointer; border-radius: 3px;">Принять</button>
+                                <button @onclick="() => RejectFriend(request.User?.Id ?? 0)" style="padding: 4px 8px; background: #f44336; color: white; border: none; cursor: pointer; border-radius: 3px;">Отклонить</button>
+                            </div>
+                        }
+                    }
+                </div>
+
+                <div style="padding: 15px;">
+                    <h4>Поиск пользователей</h4>
+                    <input type="text" @bind="SearchQuery" placeholder="Поиск..." style="width: 100%; padding: 8px; border: 1px solid #ccc; border-radius: 4px; margin-bottom: 10px;" />
+                    @if (SearchResults.Count > 0)
+                    {
+                        @foreach (var user in SearchResults.Take(5))
+                        {
+                            <div style="padding: 8px; cursor: pointer; background: #f9f9f9; border-radius: 4px; margin-bottom: 5px;"
+                                 @onclick="() => SendFriendRequest(user.Id)">
+                                <span>@user.Username</span>
+                                <button @onclick:stopPropagation="true" @onclick="() => SendFriendRequest(user.Id)" style="float: right; padding: 4px 8px; background: #2196F3; color: white; border: none; cursor: pointer; border-radius: 3px;">Добавить</button>
+                            </div>
+                        }
+                    }
+                </div>
+            }
+        </aside>
+    }
+
+    <div style="flex: 1; display: flex; flex-direction: column;">
+        @Body
+    </div>
+</div>
+
+@code {
+    public bool ShowSidebar { get; set; } = true;
+    public List<Models.User> Friends { get; set; } = new();
+    public List<Models.Friendship> PendingRequests { get; set; } = new();
+    public List<Models.User> SearchResults { get; set; } = new();
+    public Models.User? CurrentUser { get; set; }
+    public Models.User? SelectedFriend { get; set; }
+    public string SearchQuery { get; set; } = "";
+
+    private ApiService? _apiService;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _apiService = ApiService;
+        if (_apiService != null)
+        {
+            await LoadFriends();
+            await LoadPendingRequests();
+        }
+    }
+
+    private async Task LoadFriends()
+    {
+        if (_apiService != null)
+        {
+            Friends = await _apiService.GetFriendsAsync();
+        }
+    }
+
+    private async Task LoadPendingRequests()
+    {
+        if (_apiService != null)
+        {
+            PendingRequests = await _apiService.GetPendingRequestsAsync();
+        }
+    }
+
+    private async Task SendFriendRequest(int userId)
+    {
+        if (_apiService != null && await _apiService.SendFriendRequestAsync(userId))
+        {
+            SearchQuery = "";
+            SearchResults.Clear();
+        }
+    }
+
+    private async Task AcceptFriend(int userId)
+    {
+        if (_apiService != null && await _apiService.AcceptFriendRequestAsync(userId))
+        {
+            await LoadPendingRequests();
+            await LoadFriends();
+        }
+    }
+
+    private async Task RejectFriend(int userId)
+    {
+        if (_apiService != null && await _apiService.RejectFriendRequestAsync(userId))
+        {
+            await LoadPendingRequests();
+        }
+    }
+
+    private void SelectFriend(Models.User friend)
+    {
+        SelectedFriend = friend;
+    }
+
+    private void Logout()
+    {
+        Navigation.NavigateTo("/");
+    }
+}

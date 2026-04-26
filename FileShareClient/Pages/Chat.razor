@@ -1,0 +1,193 @@
+@page "/chat"
+@using FileShareClient.Services
+@using FileShareClient.Models
+@using Microsoft.AspNetCore.Components.Forms
+@using Microsoft.AspNetCore.Components.Web
+@using Microsoft.JSInterop
+@implements IAsyncDisposable
+
+<div style="height: 100vh; display: flex; flex-direction: column; overflow: hidden;">
+    <WindowTitleBar Title="FileShare" />
+<div style="display: flex; height: calc(100vh - 36px);">
+    <!-- Sidebar -->
+    <aside style="width: 300px; border-right: 1px solid #ccc; overflow-y: auto; background: #f5f5f5;">
+        <div style="padding: 15px; border-bottom: 1px solid #ccc; background: white;">
+            <h3 style="margin: 0 0 10px 0;">FileShare</h3>
+            @if (CurrentUser != null)
+            {
+                <p style="margin: 5px 0; font-size: 0.9em; color: #666;">@CurrentUser.Username</p>
+                <button @onclick="Logout" style="width: 100%; padding: 8px; background: #f0f0f0; border: 1px solid #ccc; cursor: pointer; border-radius: 4px; font-size: 0.9em;">Выход</button>
+            }
+        </div>
+
+        <!-- Friends Section -->
+        <div style="padding: 15px; border-bottom: 1px solid #ccc;">
+            <h4 style="margin: 0 0 10px 0; font-size: 1em;">Друзья</h4>
+            @if (Friends.Count > 0)
+            {
+                @foreach (var friend in Friends)
+                {
+                    <div style="padding: 10px; cursor: pointer; background: @(SelectedFriend?.Id == friend.Id ? "#e3f2fd" : "transparent"); border-radius: 4px; margin-bottom: 5px; border-left: 3px solid @(SelectedFriend?.Id == friend.Id ? "#2196F3" : "transparent");"
+                         @onclick="@(() => SelectFriend(friend))">
+                        <div style="display: flex; justify-content: space-between; align-items: center;">
+                            <span style="font-weight: 500;">@friend.DisplayName</span>
+                            <div style="display: flex; align-items: center; gap: 6px;">
+                                @if (UnreadCounts.TryGetValue(friend.Id, out var unread) && unread > 0)
+                                {
+                                    <span style="min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px; background: #ff5252; color: white; font-size: 0.75em; display: inline-flex; align-items: center; justify-content: center;">@unread</span>
+                                }
+                                <span style="margin-left: 5px; color: @(friend.IsOnline ? "green" : "gray"); font-size: 0.8em;">@(friend.IsOnline ? "●" : "○")</span>
+                            </div>
+                        </div>
+                    </div>
+                }
+            }
+            else
+            {
+                <p style="font-size: 0.9em; color: #999; margin: 0;">Нет друзей</p>
+            }
+        </div>
+
+        <!-- Friend Requests -->
+        @if (PendingRequests.Count > 0)
+        {
+            <div style="padding: 15px; border-bottom: 1px solid #ccc;">
+                <h4 style="margin: 0 0 10px 0; font-size: 1em;">Запросы дружбы (@PendingRequests.Count)</h4>
+                @foreach (var request in PendingRequests)
+                {
+                    <div style="padding: 8px; margin-bottom: 8px; border: 1px solid #ddd; border-radius: 4px; background: #fff9c4;">
+                        <p style="margin: 0 0 8px 0; font-size: 0.9em; font-weight: 500;">@request.User?.Username</p>
+                        <div style="display: flex; gap: 5px;">
+                            <button @onclick="@(() => AcceptFriend(request.User?.Id ?? 0))" style="flex: 1; padding: 4px; background: #4CAF50; color: white; border: none; cursor: pointer; border-radius: 3px; font-size: 0.8em;">✓</button>
+                            <button @onclick="@(() => RejectFriend(request.User?.Id ?? 0))" style="flex: 1; padding: 4px; background: #f44336; color: white; border: none; cursor: pointer; border-radius: 3px; font-size: 0.8em;">✕</button>
+                        </div>
+                    </div>
+                }
+            </div>
+        }
+
+        <!-- Search Users -->
+        <div style="padding: 15px;">
+            <h4 style="margin: 0 0 10px 0; font-size: 1em;">Найти пользователя</h4>
+            <div style="display: flex; gap: 5px; margin-bottom: 10px;">
+                <input type="text" @bind="SearchQuery" placeholder="Поиск..." 
+                       style="flex: 1; padding: 8px; border: 1px solid #ccc; border-radius: 4px; font-size: 0.9em;" />
+                <button @onclick="PerformSearch" style="padding: 8px 12px; background: #2196F3; color: white; border: none; cursor: pointer; border-radius: 4px;">🔍</button>
+            </div>
+            @if (SearchResults.Count > 0)
+            {
+                @foreach (var user in SearchResults.Take(5))
+                {
+                    var isFriend = Friends.Any(f => f.Id == user.Id);
+                    var hasOutgoingRequest = SentRequestUserIds.Contains(user.Id);
+                    var isPendingIncoming = PendingRequests.Any(r => r.UserId == user.Id);
+                    var canSendRequest = !isFriend && !hasOutgoingRequest && !isPendingIncoming;
+                    <div style="padding: 8px; cursor: pointer; background: #f9f9f9; border-radius: 4px; margin-bottom: 5px; display: flex; justify-content: space-between; align-items: center;"
+                         @onclick="@(() => HandleSearchItemClick(user.Id, canSendRequest))">
+                        <span style="font-size: 0.9em;">@user.Username</span>
+                        <button
+                            disabled="@(!canSendRequest)"
+                            @onclick:stopPropagation="true"
+                            @onclick="@(() => SendFriendRequest(user.Id))"
+                            style="padding: 4px 8px; background: @(canSendRequest ? "#2196F3" : "#9e9e9e"); color: white; border: none; cursor: @(canSendRequest ? "pointer" : "default"); border-radius: 3px; font-size: 0.8em;">
+                            @(isFriend ? "Друг" : hasOutgoingRequest ? "Отправлено" : isPendingIncoming ? "Входящая" : "+")
+                        </button>
+                    </div>
+                }
+            }
+        </div>
+
+    </aside>
+
+    <!-- Chat Area -->
+    <div style="flex: 1; display: flex; flex-direction: column; background: white;">
+        @if (SelectedFriend != null)
+        {
+            <!-- Chat Header -->
+            <div style="padding: 15px; border-bottom: 1px solid #ccc; background: #f9f9f9; display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                    <h2 style="margin: 0; font-size: 1.2em;">@SelectedFriend.DisplayName</h2>
+                    <small style="color: @(SelectedFriend.IsOnline ? "green" : "gray");">@(SelectedFriend.IsOnline ? "Online" : "Offline")</small>
+                </div>
+                <button @onclick="RemoveFriend" style="padding: 8px 12px; background: #f44336; color: white; border: none; cursor: pointer; border-radius: 4px; font-size: 0.9em;">Удалить из друзей</button>
+            </div>
+
+            <!-- Messages -->
+            <div id="chat-messages-scroll" style="flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 10px;">
+                @if (Messages.Count == 0)
+                {
+                    <div style="text-align: center; color: #999; margin: auto;">
+                        <p>Начните разговор!</p>
+                    </div>
+                }
+                else
+                {
+                    @foreach (var message in Messages)
+                    {
+                        <div style="display: flex; justify-content: @(message.SenderId == CurrentUser?.Id ? "flex-end" : "flex-start");">
+                            <div style="background: @(message.SenderId == CurrentUser?.Id ? "#e3f2fd" : "#f5f5f5"); padding: 10px 15px; border-radius: 10px; max-width: 60%; word-wrap: break-word;">
+                                @if (TryParseFileMessage(message, out var fileMeta))
+                                {
+                                    <div style="display: flex; align-items: center; justify-content: space-between; gap: 10px;">
+                                        <div style="font-size: 0.9em;">
+                                            <div style="display:flex; align-items:center; gap:6px;">
+                                                <span>📎 @fileMeta.FileName</span>
+                                                <span style="font-size:0.7em; color:white; background:@(fileMeta.Source == "p2p" ? "#6a5acd" : "#607d8b"); padding:1px 6px; border-radius:8px;">
+                                                    @(fileMeta.Source == "p2p" ? "P2P" : "SERVER")
+                                                </span>
+                                            </div>
+                                            <div style="color: #666; font-size: 0.8em;">@fileMeta.FileSize байт</div>
+                                        </div>
+                                        <button @onclick="() => DownloadFileFromMessage(message)"
+                                                style="padding: 4px 8px; background: #4CAF50; color: white; border: none; border-radius: 3px; cursor: pointer;">
+                                            Скачать
+                                        </button>
+                                    </div>
+                                }
+                                else
+                                {
+                                    <p style="margin: 0; font-size: 0.9em;">@message.Content</p>
+                                }
+                                <small style="color: #999; font-size: 0.8em;">@message.Timestamp.ToString("HH:mm")</small>
+                            </div>
+                        </div>
+                    }
+                }
+            </div>
+
+            <!-- Input Area -->
+            <div id="chat-drop-zone" style="padding: 15px; border-top: 1px solid #ccc; background: @(IsDraggingFile ? "#eef6ff" : "#f9f9f9");">
+                <div style="display: flex; gap: 10px; margin-bottom: 10px;">
+                    <InputFile id="file-picker" OnChange="OnFileSelected" style="display:none;" />
+                    <label for="file-picker" title="Прикрепить файл" style="display: inline-flex; align-items: center; justify-content: center; width: 40px; border: 1px solid #ccc; border-radius: 4px; cursor: pointer; background: white; font-size: 18px;">📎</label>
+                    <input type="text" @bind="MessageInput" placeholder="Введите сообщение..."
+                           @onkeydown="HandleMessageKeyDown"
+                           style="flex: 1; padding: 10px; border: 1px solid #ccc; border-radius: 4px;" />
+                    <button @onclick="SendMessage" style="padding: 10px 20px; background: #2196F3; color: white; border: none; cursor: pointer; border-radius: 4px; font-weight: 500;">Отправить</button>
+                </div>
+                <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px; font-size:0.8em; color:#667;">
+                    <span>Режим отправки файла:</span>
+                    <select @bind="FileSendMode" style="padding: 4px 6px; border: 1px solid #ccc; border-radius: 4px;">
+                        <option value="auto">AUTO (P2P -> fallback SERVER)</option>
+                        <option value="p2p">P2P only</option>
+                        <option value="server">SERVER only</option>
+                    </select>
+                </div>
+                <div style="font-size: 0.8em; color: #667;">Перетащите файл в эту область или нажмите на 📎</div>
+                @if (!string.IsNullOrWhiteSpace(FileTransferStatus))
+                {
+                    <div style="margin-top: 6px; font-size: 0.85em; color: #2b4b6f;">@FileTransferStatus</div>
+                }
+            </div>
+        }
+        else
+        {
+            <div style="flex: 1; display: flex; justify-content: center; align-items: center; color: #999;">
+                <div style="text-align: center;">
+                    <h3>Выберите друга для начала чата</h3>
+                </div>
+            </div>
+        }
+    </div>
+</div>
+</div>
