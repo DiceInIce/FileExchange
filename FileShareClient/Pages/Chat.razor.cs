@@ -823,6 +823,8 @@ public partial class Chat : IAsyncDisposable
         {
             Toasts.RemoveAt(0);
         }
+        
+        Task.Delay(5000).ContinueWith(t => Toasts.RemoveAt(0));
     }
 
     private void DismissToast(string id)
