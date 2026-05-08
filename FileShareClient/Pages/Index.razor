@@ -6,71 +6,71 @@
 
 <div style="height: 100vh; display: flex; flex-direction: column; overflow: hidden;">
     <WindowTitleBar Title="FileShare" />
-    <div style="display: flex; justify-content: center; align-items: center; height: calc(100vh - 36px); background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);">
-    <div style="background: white; padding: 40px; border-radius: 10px; box-shadow: 0 10px 25px rgba(0,0,0,0.2); width: 100%; max-width: 400px;">
-        <h1 style="text-align: center; color: #333; margin-bottom: 30px;">FileShare</h1>
+    <div style="display: flex; justify-content: center; align-items: center; height: calc(100vh - 36px); background: radial-gradient(circle at top, #e8f3ee 0%, #d9e9e2 45%, #c9ddd4 100%);">
+    <div style="background: var(--fs-bg-panel-soft); padding: 40px; border-radius: 14px; box-shadow: 0 12px 30px rgba(46, 89, 73, 0.18); width: 100%; max-width: 420px; border: 1px solid var(--fs-border);">
+        <h1 style="text-align: center; color: var(--fs-green-dark); margin-bottom: 30px;">FileShare</h1>
 
         @if (IsLogin)
         {
-            <h2 style="text-align: center; color: #666; margin-bottom: 25px;">Вход</h2>
+            <h2 style="text-align: center; color: var(--fs-text-muted); margin-bottom: 25px;">Вход</h2>
 
             @if (!string.IsNullOrEmpty(ErrorMessage))
             {
-                <div style="background: #ffebee; color: #c62828; padding: 12px; border-radius: 4px; margin-bottom: 15px; border-left: 4px solid #c62828;">
+                <div style="background: var(--fs-danger-soft); color: #a14242; padding: 12px; border-radius: 8px; margin-bottom: 15px; border-left: 4px solid var(--fs-danger);">
                     @ErrorMessage
                 </div>
             }
 
             <div style="margin-bottom: 15px;">
-                <label style="display: block; margin-bottom: 5px; font-weight: 500; color: #333;">Имя пользователя</label>
-                <input type="text" @bind="LoginUsername" placeholder="Введите имя пользователя" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box;" />
+                <label style="display: block; margin-bottom: 5px; font-weight: 500; color: var(--fs-text);">Имя пользователя</label>
+                <input type="text" @bind="LoginUsername" placeholder="Введите имя пользователя" style="width: 100%; padding: 11px; border: 1px solid var(--fs-border-soft); border-radius: 8px; box-sizing: border-box; background:var(--fs-bg-input);" />
             </div>
 
             <div style="margin-bottom: 20px;">
-                <label style="display: block; margin-bottom: 5px; font-weight: 500; color: #333;">Пароль</label>
-                <input type="password" @bind="LoginPassword" placeholder="Введите пароль" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box;" />
+                <label style="display: block; margin-bottom: 5px; font-weight: 500; color: var(--fs-text);">Пароль</label>
+                <input type="password" @bind="LoginPassword" placeholder="Введите пароль" style="width: 100%; padding: 11px; border: 1px solid var(--fs-border-soft); border-radius: 8px; box-sizing: border-box; background:var(--fs-bg-input);" />
             </div>
 
-            <button @onclick="HandleLogin" style="width: 100%; padding: 12px; background: #667eea; color: white; border: none; border-radius: 4px; font-size: 1em; font-weight: 500; cursor: pointer; margin-bottom: 15px;">
+            <button @onclick="HandleLogin" style="width: 100%; padding: 12px; background: var(--fs-green); color: white; border: none; border-radius: 8px; font-size: 1em; font-weight: 600; cursor: pointer; margin-bottom: 15px;">
                 @if (IsLoading) { <span>Загрузка...</span> } else { <span>Вход</span> }
             </button>
 
-            <p style="text-align: center; color: #666; margin: 0;">
-                Нет аккаунта? <span @onclick="ToggleMode" style="color: #667eea; cursor: pointer; text-decoration: underline;">Зарегистрируйтесь</span>
+            <p style="text-align: center; color: var(--fs-text-muted); margin: 0;">
+                Нет аккаунта? <span @onclick="ToggleMode" style="color: var(--fs-green-dark); cursor: pointer; text-decoration: underline;">Зарегистрируйтесь</span>
             </p>
         }
         else
         {
-            <h2 style="text-align: center; color: #666; margin-bottom: 25px;">Регистрация</h2>
+            <h2 style="text-align: center; color: var(--fs-text-muted); margin-bottom: 25px;">Регистрация</h2>
 
             @if (!string.IsNullOrEmpty(ErrorMessage))
             {
-                <div style="background: #ffebee; color: #c62828; padding: 12px; border-radius: 4px; margin-bottom: 15px; border-left: 4px solid #c62828;">
+                <div style="background: var(--fs-danger-soft); color: #a14242; padding: 12px; border-radius: 8px; margin-bottom: 15px; border-left: 4px solid var(--fs-danger);">
                     @ErrorMessage
                 </div>
             }
 
             <div style="margin-bottom: 15px;">
-                <label style="display: block; margin-bottom: 5px; font-weight: 500; color: #333;">Имя пользователя</label>
-                <input type="text" @bind="RegisterUsername" placeholder="Выберите имя пользователя" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box;" />
+                <label style="display: block; margin-bottom: 5px; font-weight: 500; color: var(--fs-text);">Имя пользователя</label>
+                <input type="text" @bind="RegisterUsername" placeholder="Выберите имя пользователя" style="width: 100%; padding: 11px; border: 1px solid var(--fs-border-soft); border-radius: 8px; box-sizing: border-box; background:var(--fs-bg-input);" />
             </div>
 
             <div style="margin-bottom: 15px;">
-                <label style="display: block; margin-bottom: 5px; font-weight: 500; color: #333;">Email</label>
-                <input type="email" @bind="RegisterEmail" placeholder="Введите email" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box;" />
+                <label style="display: block; margin-bottom: 5px; font-weight: 500; color: var(--fs-text);">Email</label>
+                <input type="email" @bind="RegisterEmail" placeholder="Введите email" style="width: 100%; padding: 11px; border: 1px solid var(--fs-border-soft); border-radius: 8px; box-sizing: border-box; background:var(--fs-bg-input);" />
             </div>
 
             <div style="margin-bottom: 20px;">
-                <label style="display: block; margin-bottom: 5px; font-weight: 500; color: #333;">Пароль</label>
-                <input type="password" @bind="RegisterPassword" placeholder="Придумайте пароль" style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box;" />
+                <label style="display: block; margin-bottom: 5px; font-weight: 500; color: var(--fs-text);">Пароль</label>
+                <input type="password" @bind="RegisterPassword" placeholder="Придумайте пароль" style="width: 100%; padding: 11px; border: 1px solid var(--fs-border-soft); border-radius: 8px; box-sizing: border-box; background:var(--fs-bg-input);" />
             </div>
 
-            <button @onclick="HandleRegister" style="width: 100%; padding: 12px; background: #667eea; color: white; border: none; border-radius: 4px; font-size: 1em; font-weight: 500; cursor: pointer; margin-bottom: 15px;">
+            <button @onclick="HandleRegister" style="width: 100%; padding: 12px; background: var(--fs-green); color: white; border: none; border-radius: 8px; font-size: 1em; font-weight: 600; cursor: pointer; margin-bottom: 15px;">
                 @if (IsLoading) { <span>Загрузка...</span> } else { <span>Регистрация</span> }
             </button>
 
-            <p style="text-align: center; color: #666; margin: 0;">
-                Уже есть аккаунт? <span @onclick="ToggleMode" style="color: #667eea; cursor: pointer; text-decoration: underline;">Войдите</span>
+            <p style="text-align: center; color: var(--fs-text-muted); margin: 0;">
+                Уже есть аккаунт? <span @onclick="ToggleMode" style="color: var(--fs-green-dark); cursor: pointer; text-decoration: underline;">Войдите</span>
             </p>
         }
     </div>

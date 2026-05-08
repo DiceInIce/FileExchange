@@ -2,6 +2,30 @@ html, body {
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
 }
 
+:root {
+    --fs-bg-app: #f4f8f6;
+    --fs-bg-panel: #edf4f1;
+    --fs-bg-panel-soft: #f8fcfa;
+    --fs-bg-chat: #f8fcfa;
+    --fs-bg-chat-header: #eef5f2;
+    --fs-bg-input: #fbfefd;
+    --fs-bg-message-own: #dff0e8;
+    --fs-bg-message-other: #edf4f1;
+    --fs-bg-drop: #f2f8f5;
+    --fs-bg-drop-active: #e5f4ee;
+    --fs-border: #d6e3de;
+    --fs-border-soft: #c9d9d2;
+    --fs-text: #1f2e2a;
+    --fs-text-muted: #557066;
+    --fs-text-faint: #7b9189;
+    --fs-green: #4f8a72;
+    --fs-green-dark: #3f725d;
+    --fs-online: #3c8c67;
+    --fs-offline: #8ca39b;
+    --fs-danger: #b86161;
+    --fs-danger-soft: #fff1f1;
+}
+
 .page {
     position: relative;
     display: flex;
@@ -49,8 +73,8 @@ input:focus,
 textarea:focus,
 select:focus {
     outline: none;
-    border-color: #0d6efd;
-    box-shadow: 0 0 0 0.2rem rgba(13, 110, 253, 0.25);
+    border-color: var(--fs-green);
+    box-shadow: 0 0 0 0.2rem rgba(79, 138, 114, 0.22);
 }
 
 .chat-container {
