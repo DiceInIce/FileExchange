@@ -16,16 +16,21 @@
             @if (CurrentUser != null)
             {
                 <p style="margin: 5px 0; font-size: 0.9em; color: var(--fs-text-muted);">@CurrentUser.Username</p>
-                <button @onclick="Logout" style="width: 100%; padding: 8px; background: #e5efea; border: 1px solid var(--fs-border-soft); cursor: pointer; border-radius: 8px; font-size: 0.9em; color: var(--fs-text);">Выход</button>
+                <button @onclick="Logout" class="fs-interactive fs-focusable" aria-label="Выйти из аккаунта" style="width: 100%; padding: 8px; background: #e5efea; border: 1px solid var(--fs-border-soft); cursor: pointer; border-radius: 8px; font-size: 0.9em; color: var(--fs-text);">Выход</button>
             }
         </div>
 
         <!-- Friends Section -->
-        <div style="padding: 15px; border-bottom: 1px solid var(--fs-border);">
+        <div style="padding: 15px; border-bottom: 1px solid var(--fs-border); position: sticky; top: 0; z-index: 3; background: var(--fs-bg-panel);">
             <h4 style="margin: 0 0 10px 0; font-size: 1em;">Друзья</h4>
-            @if (Friends.Count > 0)
+            <div style="display:flex; gap:6px; margin-bottom:10px;">
+                <button @onclick="@(() => SetFriendFilter("all"))" class="fs-interactive fs-focusable" aria-label="Показать всех друзей" style="padding:4px 8px; border:1px solid var(--fs-border-soft); border-radius:999px; background:@(FriendFilter=="all" ? "var(--fs-green)" : "var(--fs-bg-input)"); color:@(FriendFilter=="all" ? "white" : "var(--fs-text-muted)");">Все</button>
+                <button @onclick="@(() => SetFriendFilter("online"))" class="fs-interactive fs-focusable" aria-label="Показать друзей онлайн" style="padding:4px 8px; border:1px solid var(--fs-border-soft); border-radius:999px; background:@(FriendFilter=="online" ? "var(--fs-green)" : "var(--fs-bg-input)"); color:@(FriendFilter=="online" ? "white" : "var(--fs-text-muted)");">Онлайн</button>
+                <button @onclick="@(() => SetFriendFilter("unread"))" class="fs-interactive fs-focusable" aria-label="Показать друзей с непрочитанными" style="padding:4px 8px; border:1px solid var(--fs-border-soft); border-radius:999px; background:@(FriendFilter=="unread" ? "var(--fs-green)" : "var(--fs-bg-input)"); color:@(FriendFilter=="unread" ? "white" : "var(--fs-text-muted)");">Непроч.</button>
+            </div>
+            @if (FilteredFriends.Any())
             {
-                @foreach (var friend in Friends)
+                @foreach (var friend in FilteredFriends)
                 {
                     <div style="padding: 10px; cursor: pointer; background: @(SelectedFriend?.Id == friend.Id ? "var(--fs-bg-message-own)" : "transparent"); border-radius: 8px; margin-bottom: 5px; border-left: 3px solid @(SelectedFriend?.Id == friend.Id ? "var(--fs-green)" : "transparent");"
                          @onclick="@(() => SelectFriend(friend))">
@@ -44,7 +49,7 @@
             }
             else
             {
-                <p style="font-size: 0.9em; color: var(--fs-text-faint); margin: 0;">Нет друзей</p>
+                <p style="font-size: 0.9em; color: var(--fs-text-faint); margin: 0;">Нет друзей для выбранного фильтра</p>
             }
         </div>
 
@@ -58,8 +63,8 @@
                     <div style="padding: 8px; margin-bottom: 8px; border: 1px solid var(--fs-border); border-radius: 8px; background: #f3f8f5;">
                         <p style="margin: 0 0 8px 0; font-size: 0.9em; font-weight: 500;">@request.User?.Username</p>
                         <div style="display: flex; gap: 5px;">
-                            <button @onclick="@(() => AcceptFriend(request.User?.Id ?? 0))" style="flex: 1; padding: 4px; background: var(--fs-green); color: white; border: none; cursor: pointer; border-radius: 6px; font-size: 0.8em;">✓</button>
-                            <button @onclick="@(() => RejectFriend(request.User?.Id ?? 0))" style="flex: 1; padding: 4px; background: var(--fs-danger); color: white; border: none; cursor: pointer; border-radius: 6px; font-size: 0.8em;">✕</button>
+                            <button @onclick="@(() => AcceptFriend(request.User?.Id ?? 0))" class="fs-interactive fs-focusable" aria-label="Принять заявку в друзья" style="flex: 1; padding: 4px; background: var(--fs-green); color: white; border: none; cursor: pointer; border-radius: 6px; font-size: 0.8em;">✓</button>
+                            <button @onclick="@(() => RejectFriend(request.User?.Id ?? 0))" class="fs-interactive fs-focusable" aria-label="Отклонить заявку в друзья" style="flex: 1; padding: 4px; background: var(--fs-danger); color: white; border: none; cursor: pointer; border-radius: 6px; font-size: 0.8em;">✕</button>
                         </div>
                     </div>
                 }
@@ -70,9 +75,9 @@
         <div style="padding: 15px;">
             <h4 style="margin: 0 0 10px 0; font-size: 1em;">Найти пользователя</h4>
             <div style="display: flex; gap: 5px; margin-bottom: 10px;">
-                <input type="text" @bind="SearchQuery" placeholder="Поиск..." 
+                <input type="text" @bind="SearchQuery" placeholder="Поиск..." aria-label="Поиск пользователей"
                        style="flex: 1; padding: 8px; border: 1px solid var(--fs-border-soft); border-radius: 8px; font-size: 0.9em; background:var(--fs-bg-input);" />
-                <button @onclick="PerformSearch" style="padding: 8px 12px; background: var(--fs-green); color: white; border: none; cursor: pointer; border-radius: 8px;">🔍</button>
+                <button @onclick="PerformSearch" class="fs-interactive fs-focusable" aria-label="Искать пользователя" style="padding: 8px 12px; background: var(--fs-green); color: white; border: none; cursor: pointer; border-radius: 8px;">🔍</button>
             </div>
             @if (SearchResults.Count > 0)
             {
@@ -89,6 +94,8 @@
                             disabled="@(!canSendRequest)"
                             @onclick:stopPropagation="true"
                             @onclick="@(() => SendFriendRequest(user.Id))"
+                            class="fs-interactive fs-focusable"
+                            aria-label="Отправить заявку в друзья"
                             style="padding: 4px 8px; background: @(canSendRequest ? "var(--fs-green)" : "#9bb0a8"); color: white; border: none; cursor: @(canSendRequest ? "pointer" : "default"); border-radius: 6px; font-size: 0.8em;">
                             @(isFriend ? "Друг" : hasOutgoingRequest ? "Отправлено" : isPendingIncoming ? "Входящая" : "+")
                         </button>
@@ -100,7 +107,7 @@
     </aside>
 
     <!-- Chat Area -->
-    <div style="flex: 1; display: flex; flex-direction: column; background: var(--fs-bg-chat);">
+    <div style="flex: 1; display: flex; flex-direction: column; background: var(--fs-bg-chat); position:relative;">
         @if (SelectedFriend != null)
         {
             <!-- Chat Header -->
@@ -109,20 +116,28 @@
                     <h2 style="margin: 0; font-size: 1.2em;">@SelectedFriend.DisplayName</h2>
                     <small style="color: @(SelectedFriend.IsOnline ? "var(--fs-online)" : "var(--fs-offline)");">@(SelectedFriend.IsOnline ? "Online" : "Offline")</small>
                 </div>
-                <button @onclick="RemoveFriend" style="padding: 8px 12px; background: var(--fs-danger); color: white; border: none; cursor: pointer; border-radius: 8px; font-size: 0.9em;">Удалить из друзей</button>
+                <input type="text" @bind="MessageSearchQuery" placeholder="Поиск в сообщениях..." aria-label="Поиск по сообщениям текущего чата" style="padding:8px 10px; border:1px solid var(--fs-border-soft); border-radius:8px; background:var(--fs-bg-input); min-width:220px;" />
+                <button @onclick="RemoveFriend" class="fs-interactive fs-focusable" aria-label="Удалить друга" style="padding: 8px 12px; background: var(--fs-danger); color: white; border: none; cursor: pointer; border-radius: 8px; font-size: 0.9em;">Удалить из друзей</button>
             </div>
 
             <!-- Messages -->
             <div id="chat-messages-scroll" style="flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 10px;">
-                @if (Messages.Count == 0)
+                @if (IsInitialLoading)
+                {
+                    @for (var i = 0; i < 4; i++)
+                    {
+                        <div style="height: 64px; border-radius: 12px; background: linear-gradient(90deg, #e4ede8, #f1f6f3, #e4ede8);"></div>
+                    }
+                }
+                else if (!VisibleMessages.Any())
                 {
                     <div style="text-align: center; color: var(--fs-text-faint); margin: auto;">
-                        <p>Начните разговор!</p>
+                        <p>@(Messages.Count == 0 ? "Начните разговор!" : "Ничего не найдено по текущему фильтру сообщений.")</p>
                     </div>
                 }
                 else
                 {
-                    @foreach (var message in Messages)
+                    @foreach (var message in VisibleMessages)
                     {
                         <div style="display: flex; justify-content: @(message.SenderId == CurrentUser?.Id ? "flex-end" : "flex-start");">
                             <div style="background: @(message.SenderId == CurrentUser?.Id ? "var(--fs-bg-message-own)" : "var(--fs-bg-message-other)"); padding: 10px 15px; border-radius: 12px; max-width: 60%; word-wrap: break-word; border:1px solid var(--fs-border);">
@@ -138,7 +153,7 @@
                                             </div>
                                             <div style="color: var(--fs-text-muted); font-size: 0.8em;">@fileMeta.FileSize байт</div>
                                         </div>
-                                        <button @onclick="() => DownloadFileFromMessage(message)"
+                                        <button @onclick="() => DownloadFileFromMessage(message)" class="fs-interactive fs-focusable" aria-label="Скачать файл из сообщения"
                                                 style="padding: 4px 8px; background: var(--fs-green); color: white; border: none; border-radius: 6px; cursor: pointer;">
                                             Скачать
                                         </button>
@@ -154,20 +169,33 @@
                     }
                 }
             </div>
+            @if (ShowScrollToBottomButton)
+            {
+                <button @onclick="ScrollToBottomNow" class="fs-interactive fs-focusable"
+                        title="Прокрутить вниз"
+                        aria-label="Прокрутить сообщения вниз"
+                        style="position:absolute; right:24px; bottom:170px; z-index:4; background:var(--fs-green); color:#fff; border:none; width:40px; height:40px; border-radius:999px; cursor:pointer; box-shadow:0 6px 20px rgba(31,46,42,0.24);">
+                    ↓
+                </button>
+            }
 
             <!-- Input Area -->
             <div id="chat-drop-zone" style="padding: 15px; border-top: 1px solid var(--fs-border); background: @(IsDraggingFile ? "var(--fs-bg-drop-active)" : "var(--fs-bg-drop)");">
                 <div style="display: flex; gap: 10px; margin-bottom: 10px;">
                     <InputFile id="file-picker" OnChange="OnFileSelected" style="display:none;" />
-                    <label for="file-picker" title="Прикрепить файл" style="display: inline-flex; align-items: center; justify-content: center; width: 40px; border: 1px solid var(--fs-border-soft); border-radius: 8px; cursor: pointer; background: var(--fs-bg-input); font-size: 18px;">📎</label>
-                    <input type="text" @bind="MessageInput" placeholder="Введите сообщение..."
-                           @onkeydown="HandleMessageKeyDown"
-                           style="flex: 1; padding: 10px; border: 1px solid var(--fs-border-soft); border-radius: 8px; background:var(--fs-bg-input);" />
-                    <button @onclick="SendMessage" style="padding: 10px 20px; background: var(--fs-green); color: white; border: none; cursor: pointer; border-radius: 8px; font-weight: 500;">Отправить</button>
+                    <label for="file-picker" title="Прикрепить файл" class="fs-interactive fs-focusable" aria-label="Выбрать файл для отправки" style="display: inline-flex; align-items: center; justify-content: center; width: 40px; border: 1px solid var(--fs-border-soft); border-radius: 8px; cursor: pointer; background: var(--fs-bg-input); font-size: 18px;">📎</label>
+                    <textarea @bind="MessageInput" placeholder="Введите сообщение..." aria-label="Поле ввода сообщения"
+                              @onkeydown="HandleMessageKeyDown"
+                              rows="2"
+                              style="flex: 1; padding: 10px; border: 1px solid var(--fs-border-soft); border-radius: 8px; background:var(--fs-bg-input); resize:none; min-height:42px;"></textarea>
+                    <button @onclick="SendMessage" class="fs-interactive fs-focusable" aria-label="Отправить сообщение" style="padding: 10px 20px; background: var(--fs-green); color: white; border: none; cursor: pointer; border-radius: 8px; font-weight: 500;">Отправить</button>
+                </div>
+                <div style="display:flex; justify-content:space-between; align-items:center; font-size:0.8em; color:var(--fs-text-muted); margin-bottom:6px;">
+                    <span>@(IsSendingMessage ? "Отправляется..." : MessageDeliveryStatus)</span>
                 </div>
                 <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px; font-size:0.8em; color:var(--fs-text-muted);">
                     <span>Режим отправки файла:</span>
-                    <select @bind="FileSendMode" style="padding: 4px 6px; border: 1px solid var(--fs-border-soft); border-radius: 8px; background:var(--fs-bg-input);">
+                    <select @bind="FileSendMode" aria-label="Выбор режима отправки файла" style="padding: 4px 6px; border: 1px solid var(--fs-border-soft); border-radius: 8px; background:var(--fs-bg-input);">
                         <option value="auto">AUTO (P2P -> fallback SERVER)</option>
                         <option value="p2p">P2P only</option>
                         <option value="server">SERVER only</option>
@@ -178,7 +206,6 @@
                 {
                     <div style="margin-top: 6px; font-size: 0.85em; color: #355f52;">@FileTransferStatus</div>
                 }
-                
                 @if (IsDownloading && CurrentDownloadProgress != null)
                 {
                     <div style="margin-top: 12px; padding: 10px; background: #eaf5ef; border: 1px solid var(--fs-border-soft); border-radius: 8px;">
@@ -220,9 +247,20 @@
             <div style="flex: 1; display: flex; justify-content: center; align-items: center; color: var(--fs-text-faint);">
                 <div style="text-align: center;">
                     <h3>Выберите друга для начала чата</h3>
+                    <p style="margin-top:8px;">Можно фильтровать друзей слева и искать по имени.</p>
                 </div>
             </div>
         }
     </div>
 </div>
+</div>
+<div style="position: fixed; left: 50%; transform: translateX(-50%); top: 52px; z-index: 10; display: flex; flex-direction: column; gap: 8px; align-items: center;">
+    @foreach (var toast in Toasts)
+    {
+        var bg = toast.Kind == "error" ? "var(--fs-danger)" : toast.Kind == "success" ? "var(--fs-green)" : "#46665b";
+        <div style="min-width:260px; max-width:360px; background:@bg; color:white; border-radius:10px; padding:10px 12px; box-shadow:0 10px 20px rgba(0,0,0,0.18); display:flex; justify-content:space-between; gap:8px;">
+            <span>@toast.Text</span>
+            <button @onclick="() => DismissToast(toast.Id)" class="fs-focusable" aria-label="Закрыть уведомление" style="border:none; background:transparent; color:white; cursor:pointer;">x</button>
+        </div>
+    }
 </div>

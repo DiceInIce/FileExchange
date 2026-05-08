@@ -28,16 +28,36 @@ public partial class Chat : IAsyncDisposable
     private string SearchQuery = "";
     private string FileTransferStatus = "";
     private string FileSendMode = "auto";
+    private string MessageSearchQuery = "";
+    private string MessageDeliveryStatus = "";
+    private bool IsSendingMessage;
     private bool IsDraggingFile;
     private DotNetObjectReference<Chat>? _dropRef;
     private DotNetObjectReference<Chat>? _peerRef;
     private bool _dropZoneInitialized;
+    private bool _scrollObserverInitialized;
     private bool _scrollToBottomRequested;
+    private bool _isNearBottom = true;
+    private bool ShowScrollToBottomButton;
+    private bool IsInitialLoading = true;
+    private List<ToastMessage> Toasts = new();
     
     // Download progress tracking
     private DownloadProgress? CurrentDownloadProgress;
     private bool IsDownloading;
     private string CurrentDownloadFileName = "";
+    private IEnumerable<User> FilteredFriends =>
+        FriendFilter switch
+        {
+            "online" => Friends.Where(f => f.IsOnline),
+            "unread" => Friends.Where(f => UnreadCounts.TryGetValue(f.Id, out var unread) && unread > 0),
+            _ => Friends
+        };
+    private IEnumerable<ChatMessage> VisibleMessages =>
+        string.IsNullOrWhiteSpace(MessageSearchQuery)
+            ? Messages
+            : Messages.Where(m => m.Content?.Contains(MessageSearchQuery, StringComparison.OrdinalIgnoreCase) == true);
+    private string FriendFilter = "all";
 
     protected override async Task OnInitializedAsync()
     {
@@ -98,6 +118,17 @@ public partial class Chat : IAsyncDisposable
             _scrollToBottomRequested = false;
             await JS.InvokeVoidAsync("chatFileDrop.scrollToBottom", "chat-messages-scroll");
         }
+
+        if (SelectedFriend != null && !_scrollObserverInitialized)
+        {
+            await JS.InvokeVoidAsync("chatFileDrop.initScrollObserver", "chat-messages-scroll", _dropRef);
+            _scrollObserverInitialized = true;
+        }
+        else if (SelectedFriend == null && _scrollObserverInitialized)
+        {
+            await JS.InvokeVoidAsync("chatFileDrop.disposeScrollObserver", "chat-messages-scroll");
+            _scrollObserverInitialized = false;
+        }
     }
 
     private async Task LoadInitialData()
@@ -116,6 +147,11 @@ public partial class Chat : IAsyncDisposable
         catch (Exception ex)
         {
             Console.WriteLine($"Error loading data: {ex.Message}");
+            AddToast("Не удалось обновить список друзей.", "error");
+        }
+        finally
+        {
+            IsInitialLoading = false;
         }
     }
 
@@ -125,6 +161,7 @@ public partial class Chat : IAsyncDisposable
         Messages = await ApiService.GetConversationAsync(friend.Id);
         await MarkFriendMessagesAsRead(friend.Id);
         MessageInput = "";
+        MessageDeliveryStatus = "";
         _scrollToBottomRequested = true;
     }
 
@@ -144,6 +181,8 @@ public partial class Chat : IAsyncDisposable
 
         var content = MessageInput;
         MessageInput = "";
+        IsSendingMessage = true;
+        MessageDeliveryStatus = "Отправка...";
 
         var sentViaP2P = false;
         try
@@ -158,10 +197,12 @@ public partial class Chat : IAsyncDisposable
         if (sentViaP2P)
         {
             _ = ApiService.StoreMessageAsync(SelectedFriend.Id, content);
+            MessageDeliveryStatus = "Отправлено по P2P";
         }
         else
         {
             await ChatService.SendMessageAsync(SelectedFriend.Id, content);
+            MessageDeliveryStatus = "Отправлено через сервер";
         }
         
         Messages.Add(new ChatMessage
@@ -174,7 +215,16 @@ public partial class Chat : IAsyncDisposable
             Type = 0
         });
 
-        _scrollToBottomRequested = true;
+        if (_isNearBottom)
+        {
+            _scrollToBottomRequested = true;
+            ShowScrollToBottomButton = false;
+        }
+        else
+        {
+            ShowScrollToBottomButton = true;
+        }
+        IsSendingMessage = false;
         StateHasChanged();
     }
 
@@ -185,7 +235,15 @@ public partial class Chat : IAsyncDisposable
         {
             Messages.Add(message);
             _ = MarkSingleMessageAsRead(message.Id);
-            _scrollToBottomRequested = true;
+            if (_isNearBottom)
+            {
+                _scrollToBottomRequested = true;
+                ShowScrollToBottomButton = false;
+            }
+            else
+            {
+                ShowScrollToBottomButton = true;
+            }
             _ = InvokeAsync(StateHasChanged);
         }
         else
@@ -304,7 +362,7 @@ public partial class Chat : IAsyncDisposable
 
     private async Task HandleMessageKeyDown(KeyboardEventArgs e)
     {
-        if (e.Key == "Enter")
+        if (e.Key == "Enter" && !e.ShiftKey)
         {
             await SendMessage();
         }
@@ -345,6 +403,11 @@ public partial class Chat : IAsyncDisposable
             SearchResults = await ApiService.SearchUsersAsync(SearchQuery);
             StateHasChanged();
         }
+    }
+
+    private void SetFriendFilter(string filter)
+    {
+        FriendFilter = filter;
     }
 
     private async Task OnFileSelected(InputFileChangeEventArgs e)
@@ -415,10 +478,12 @@ public partial class Chat : IAsyncDisposable
             if (!serverOnlySuccess)
             {
                 FileTransferStatus = serverOnlyError;
+                AddToast("Ошибка отправки файла. Можно повторить.", "error");
                 return;
             }
 
             FileTransferStatus = $"SERVER: файл '{fileName}' отправлен пользователю {SelectedFriend.DisplayName}.";
+            AddToast(FileTransferStatus, "success");
             return;
         }
 
@@ -431,6 +496,7 @@ public partial class Chat : IAsyncDisposable
                 P2pFileCache[p2pResult.Token] = (fileBytes, fileName);
                 await ApiService.StoreFileMessageAsync(SelectedFriend.Id, fileName, fileBytes.LongLength, "p2p", p2pResult.Token);
                 FileTransferStatus = $"P2P: файл '{fileName}' отправлен пользователю {SelectedFriend.DisplayName}.";
+                AddToast(FileTransferStatus, "success");
                 return;
             }
         }
@@ -439,6 +505,7 @@ public partial class Chat : IAsyncDisposable
             if (mode == "p2p")
             {
                 FileTransferStatus = "P2P-only режим: не удалось установить прямое соединение.";
+                AddToast(FileTransferStatus, "error");
                 return;
             }
         }
@@ -446,18 +513,22 @@ public partial class Chat : IAsyncDisposable
         if (mode == "p2p")
         {
             FileTransferStatus = "P2P-only режим: прямое соединение недоступно.";
+            AddToast(FileTransferStatus, "error");
             return;
         }
 
+        AddToast("P2P недоступен, отправляю через сервер...", "info");
         await using var apiStream = new MemoryStream(fileBytes);
         var (success, error) = await ApiService.UploadFileAsync(SelectedFriend.Id, apiStream, fileName);
         if (!success)
         {
             FileTransferStatus = error;
+            AddToast("Ошибка отправки файла через сервер.", "error");
             return;
         }
 
         FileTransferStatus = $"SERVER: файл '{fileName}' отправлен пользователю {SelectedFriend.DisplayName}.";
+        AddToast(FileTransferStatus, "success");
     }
 
     private void HandleOfferReceived(WebRTCOffer offer)
@@ -532,6 +603,7 @@ public partial class Chat : IAsyncDisposable
             if (!P2pFileCache.TryGetValue(fileMeta.Token, out var cached))
             {
                 FileTransferStatus = "Этот P2P-файл недоступен локально (возможно, после перезапуска).";
+                AddToast(FileTransferStatus, "error");
                 return;
             }
 
@@ -539,6 +611,7 @@ public partial class Chat : IAsyncDisposable
             FileTransferStatus = p2pSaved
                 ? $"P2P: файл '{cached.FileName}' сохранен."
                 : "Сохранение файла отменено.";
+            AddToast(FileTransferStatus, p2pSaved ? "success" : "info");
             return;
         }
 
@@ -560,6 +633,7 @@ public partial class Chat : IAsyncDisposable
             if (!success || data == null)
             {
                 FileTransferStatus = error;
+                AddToast(FileTransferStatus, "error");
                 return;
             }
 
@@ -567,6 +641,7 @@ public partial class Chat : IAsyncDisposable
             FileTransferStatus = saved
                 ? $"SERVER: файл '{fileName}' сохранен."
                 : "Сохранение файла отменено.";
+            AddToast(FileTransferStatus, saved ? "success" : "info");
         }
         finally
         {
@@ -675,6 +750,7 @@ public partial class Chat : IAsyncDisposable
     public Task OnPeerTransferStatus(string status)
     {
         FileTransferStatus = status;
+        AddToast(status, status.Contains("не", StringComparison.OrdinalIgnoreCase) ? "error" : "info");
         return InvokeAsync(StateHasChanged);
     }
 
@@ -687,10 +763,12 @@ public partial class Chat : IAsyncDisposable
             var normalizedToken = string.IsNullOrWhiteSpace(token) ? "-" : token;
             P2pFileCache[normalizedToken] = (bytes, fileName);
             FileTransferStatus = $"P2P: получен файл '{fileName}' ({size} байт).";
+            AddToast(FileTransferStatus, "success");
         }
         catch
         {
             FileTransferStatus = "P2P: не удалось обработать полученный файл.";
+            AddToast(FileTransferStatus, "error");
         }
 
         if (SelectedFriend?.Id == senderId)
@@ -698,12 +776,65 @@ public partial class Chat : IAsyncDisposable
             _ = InvokeAsync(async () =>
             {
                 Messages = await ApiService.GetConversationAsync(senderId);
-                _scrollToBottomRequested = true;
+                if (_isNearBottom)
+                {
+                    _scrollToBottomRequested = true;
+                }
+                else
+                {
+                    ShowScrollToBottomButton = true;
+                }
                 StateHasChanged();
             });
         }
 
         return InvokeAsync(StateHasChanged);
+    }
+
+    [JSInvokable]
+    public Task OnMessagesScrolled(bool nearBottom)
+    {
+        _isNearBottom = nearBottom;
+        ShowScrollToBottomButton = !nearBottom && Messages.Count > 0;
+        return InvokeAsync(StateHasChanged);
+    }
+
+    private async Task ScrollToBottomNow()
+    {
+        ShowScrollToBottomButton = false;
+        _isNearBottom = true;
+        await JS.InvokeVoidAsync("chatFileDrop.scrollToBottom", "chat-messages-scroll");
+    }
+
+    private void AddToast(string text, string kind = "info")
+    {
+        if (string.IsNullOrWhiteSpace(text))
+        {
+            return;
+        }
+
+        Toasts.Add(new ToastMessage
+        {
+            Id = Guid.NewGuid().ToString("N"),
+            Text = text,
+            Kind = kind
+        });
+        if (Toasts.Count > 4)
+        {
+            Toasts.RemoveAt(0);
+        }
+    }
+
+    private void DismissToast(string id)
+    {
+        Toasts.RemoveAll(t => t.Id == id);
+    }
+
+    private sealed class ToastMessage
+    {
+        public string Id { get; set; } = string.Empty;
+        public string Text { get; set; } = string.Empty;
+        public string Kind { get; set; } = "info";
     }
 
     private void Logout()
@@ -765,6 +896,7 @@ public partial class Chat : IAsyncDisposable
         if (_dropRef != null)
         {
             await JS.InvokeVoidAsync("chatFileDrop.disposeDropZone", "chat-drop-zone");
+            await JS.InvokeVoidAsync("chatFileDrop.disposeScrollObserver", "chat-messages-scroll");
             _dropRef.Dispose();
         }
 

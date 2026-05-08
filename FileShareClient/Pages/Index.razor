@@ -23,20 +23,20 @@
 
             <div style="margin-bottom: 15px;">
                 <label style="display: block; margin-bottom: 5px; font-weight: 500; color: var(--fs-text);">Имя пользователя</label>
-                <input type="text" @bind="LoginUsername" placeholder="Введите имя пользователя" style="width: 100%; padding: 11px; border: 1px solid var(--fs-border-soft); border-radius: 8px; box-sizing: border-box; background:var(--fs-bg-input);" />
+                <input type="text" @bind="LoginUsername" aria-label="Имя пользователя для входа" placeholder="Введите имя пользователя" style="width: 100%; padding: 11px; border: 1px solid var(--fs-border-soft); border-radius: 8px; box-sizing: border-box; background:var(--fs-bg-input);" />
             </div>
 
             <div style="margin-bottom: 20px;">
                 <label style="display: block; margin-bottom: 5px; font-weight: 500; color: var(--fs-text);">Пароль</label>
-                <input type="password" @bind="LoginPassword" placeholder="Введите пароль" style="width: 100%; padding: 11px; border: 1px solid var(--fs-border-soft); border-radius: 8px; box-sizing: border-box; background:var(--fs-bg-input);" />
+                <input type="password" @bind="LoginPassword" aria-label="Пароль для входа" placeholder="Введите пароль" style="width: 100%; padding: 11px; border: 1px solid var(--fs-border-soft); border-radius: 8px; box-sizing: border-box; background:var(--fs-bg-input);" />
             </div>
 
-            <button @onclick="HandleLogin" style="width: 100%; padding: 12px; background: var(--fs-green); color: white; border: none; border-radius: 8px; font-size: 1em; font-weight: 600; cursor: pointer; margin-bottom: 15px;">
+            <button @onclick="HandleLogin" class="fs-interactive fs-focusable" aria-label="Войти в аккаунт" style="width: 100%; padding: 12px; background: var(--fs-green); color: white; border: none; border-radius: 8px; font-size: 1em; font-weight: 600; cursor: pointer; margin-bottom: 15px;">
                 @if (IsLoading) { <span>Загрузка...</span> } else { <span>Вход</span> }
             </button>
 
             <p style="text-align: center; color: var(--fs-text-muted); margin: 0;">
-                Нет аккаунта? <span @onclick="ToggleMode" style="color: var(--fs-green-dark); cursor: pointer; text-decoration: underline;">Зарегистрируйтесь</span>
+                Нет аккаунта? <span @onclick="ToggleMode" role="button" tabindex="0" aria-label="Переключиться на регистрацию" class="fs-focusable" style="color: var(--fs-green-dark); cursor: pointer; text-decoration: underline;">Зарегистрируйтесь</span>
             </p>
         }
         else
@@ -52,25 +52,25 @@
 
             <div style="margin-bottom: 15px;">
                 <label style="display: block; margin-bottom: 5px; font-weight: 500; color: var(--fs-text);">Имя пользователя</label>
-                <input type="text" @bind="RegisterUsername" placeholder="Выберите имя пользователя" style="width: 100%; padding: 11px; border: 1px solid var(--fs-border-soft); border-radius: 8px; box-sizing: border-box; background:var(--fs-bg-input);" />
+                <input type="text" @bind="RegisterUsername" aria-label="Имя пользователя для регистрации" placeholder="Выберите имя пользователя" style="width: 100%; padding: 11px; border: 1px solid var(--fs-border-soft); border-radius: 8px; box-sizing: border-box; background:var(--fs-bg-input);" />
             </div>
 
             <div style="margin-bottom: 15px;">
                 <label style="display: block; margin-bottom: 5px; font-weight: 500; color: var(--fs-text);">Email</label>
-                <input type="email" @bind="RegisterEmail" placeholder="Введите email" style="width: 100%; padding: 11px; border: 1px solid var(--fs-border-soft); border-radius: 8px; box-sizing: border-box; background:var(--fs-bg-input);" />
+                <input type="email" @bind="RegisterEmail" aria-label="Email для регистрации" placeholder="Введите email" style="width: 100%; padding: 11px; border: 1px solid var(--fs-border-soft); border-radius: 8px; box-sizing: border-box; background:var(--fs-bg-input);" />
             </div>
 
             <div style="margin-bottom: 20px;">
                 <label style="display: block; margin-bottom: 5px; font-weight: 500; color: var(--fs-text);">Пароль</label>
-                <input type="password" @bind="RegisterPassword" placeholder="Придумайте пароль" style="width: 100%; padding: 11px; border: 1px solid var(--fs-border-soft); border-radius: 8px; box-sizing: border-box; background:var(--fs-bg-input);" />
+                <input type="password" @bind="RegisterPassword" aria-label="Пароль для регистрации" placeholder="Придумайте пароль" style="width: 100%; padding: 11px; border: 1px solid var(--fs-border-soft); border-radius: 8px; box-sizing: border-box; background:var(--fs-bg-input);" />
             </div>
 
-            <button @onclick="HandleRegister" style="width: 100%; padding: 12px; background: var(--fs-green); color: white; border: none; border-radius: 8px; font-size: 1em; font-weight: 600; cursor: pointer; margin-bottom: 15px;">
+            <button @onclick="HandleRegister" class="fs-interactive fs-focusable" aria-label="Создать аккаунт" style="width: 100%; padding: 12px; background: var(--fs-green); color: white; border: none; border-radius: 8px; font-size: 1em; font-weight: 600; cursor: pointer; margin-bottom: 15px;">
                 @if (IsLoading) { <span>Загрузка...</span> } else { <span>Регистрация</span> }
             </button>
 
             <p style="text-align: center; color: var(--fs-text-muted); margin: 0;">
-                Уже есть аккаунт? <span @onclick="ToggleMode" style="color: var(--fs-green-dark); cursor: pointer; text-decoration: underline;">Войдите</span>
+                Уже есть аккаунт? <span @onclick="ToggleMode" role="button" tabindex="0" aria-label="Переключиться на вход" class="fs-focusable" style="color: var(--fs-green-dark); cursor: pointer; text-decoration: underline;">Войдите</span>
             </p>
         }
     </div>

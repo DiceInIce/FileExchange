@@ -26,6 +26,39 @@ html, body {
     --fs-danger-soft: #fff1f1;
 }
 
+.fs-interactive {
+    transition: transform 0.16s ease, box-shadow 0.16s ease, filter 0.16s ease;
+}
+
+.fs-interactive:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 6px 14px rgba(31, 46, 42, 0.12);
+    filter: saturate(1.04);
+}
+
+.fs-interactive:active {
+    transform: translateY(0);
+    box-shadow: 0 2px 8px rgba(31, 46, 42, 0.1);
+}
+
+.fs-focusable:focus-visible {
+    outline: 2px solid var(--fs-green);
+    outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .fs-interactive {
+        transition: none;
+    }
+
+    .fs-interactive:hover,
+    .fs-interactive:active {
+        transform: none;
+        box-shadow: none;
+        filter: none;
+    }
+}
+
 .page {
     position: relative;
     display: flex;

@@ -76,5 +76,41 @@ window.chatFileDrop = {
     }
     if (!element) return;
     element.scrollTop = element.scrollHeight;
+  },
+
+  isNearBottom: function (elementOrId, threshold) {
+    let element = elementOrId;
+    if (typeof elementOrId === "string") {
+      element = document.getElementById(elementOrId);
+    }
+    if (!element) return true;
+    const px = typeof threshold === "number" ? threshold : 100;
+    return element.scrollHeight - element.scrollTop - element.clientHeight <= px;
+  },
+
+  initScrollObserver: function (elementOrId, dotNetRef) {
+    let element = elementOrId;
+    if (typeof elementOrId === "string") {
+      element = document.getElementById(elementOrId);
+    }
+    if (!element || typeof element.addEventListener !== "function") return;
+
+    const onScroll = function () {
+      const nearBottom = element.scrollHeight - element.scrollTop - element.clientHeight <= 100;
+      dotNetRef.invokeMethodAsync("OnMessagesScrolled", nearBottom);
+    };
+
+    element.__chatScrollHandler = onScroll;
+    element.addEventListener("scroll", onScroll);
+  },
+
+  disposeScrollObserver: function (elementOrId) {
+    let element = elementOrId;
+    if (typeof elementOrId === "string") {
+      element = document.getElementById(elementOrId);
+    }
+    if (!element || !element.__chatScrollHandler) return;
+    element.removeEventListener("scroll", element.__chatScrollHandler);
+    delete element.__chatScrollHandler;
   }
 };
