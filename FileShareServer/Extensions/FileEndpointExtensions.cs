@@ -130,7 +130,7 @@ namespace FileShareServer.Extensions
             })
             .WithName("GetInboxFiles");
 
-            filesApi.MapGet(AppConstants.ApiRoutes.Files.Download, async (int id, HttpContext httpContext, ApplicationDbContext db, [FromServices] WebApplication webApp) =>
+            filesApi.MapGet(AppConstants.ApiRoutes.Files.Download, async (int id, HttpContext httpContext, ApplicationDbContext db) =>
             {
                 var userId = httpContext.GetUserId();
                 if (userId == 0) return Results.Unauthorized();

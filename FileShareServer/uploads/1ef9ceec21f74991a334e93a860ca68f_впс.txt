@@ -1,0 +1,3 @@
+root
+vSo5BtWUPK
+ssh root@185.105.108.209

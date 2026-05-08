@@ -7,7 +7,7 @@ namespace FileShareClient.Services
     {
         private readonly HttpClient _httpClient;
         private string? _token;
-        public string ServerUrl { get; set; } = "https://localhost:7217";
+        public string ServerUrl { get; set; } = "https://185.105.108.209:7217";
         public string? Token => _token;
         public User? CurrentUser { get; private set; }
         public bool IsAuthenticated => !string.IsNullOrWhiteSpace(_token);
@@ -301,11 +301,11 @@ namespace FileShareClient.Services
             }
         }
 
-        public async Task<(bool Success, byte[]? Data, string FileName, string Error)> DownloadFileAsync(int fileId)
+        public async Task<(bool Success, byte[]? Data, string FileName, string Error)> DownloadFileAsync(int fileId, IProgress<DownloadProgress>? progress = null)
         {
             try
             {
-                var response = await _httpClient.GetAsync($"{ServerUrl}/api/files/download/{fileId}");
+                var response = await _httpClient.GetAsync($"{ServerUrl}/api/files/download/{fileId}", HttpCompletionOption.ResponseHeadersRead);
                 if (!response.IsSuccessStatusCode)
                 {
                     var error = await response.Content.ReadAsStringAsync();
@@ -316,8 +316,46 @@ namespace FileShareClient.Services
                     ?? response.Content.Headers.ContentDisposition?.FileName
                     ?? $"file_{fileId}";
                 fileName = fileName.Trim('"');
-                var bytes = await response.Content.ReadAsByteArrayAsync();
-                return (true, bytes, fileName, string.Empty);
+
+                var totalBytes = response.Content.Headers.ContentLength ?? 0;
+                var startTime = DateTime.Now;
+                var bytesReceived = 0L;
+                var buffer = new byte[8192];
+                int bytesRead;
+
+                using (var contentStream = await response.Content.ReadAsStreamAsync())
+                using (var memoryStream = new MemoryStream())
+                {
+                    while ((bytesRead = await contentStream.ReadAsync(buffer, 0, buffer.Length)) > 0)
+                    {
+                        memoryStream.Write(buffer, 0, bytesRead);
+                        bytesReceived += bytesRead;
+
+                        if (progress != null && totalBytes > 0)
+                        {
+                            var elapsedTime = DateTime.Now - startTime;
+                            var speedBytesPerSecond = elapsedTime.TotalSeconds > 0 
+                                ? bytesReceived / elapsedTime.TotalSeconds 
+                                : 0;
+                            var remainingBytes = totalBytes - bytesReceived;
+                            var estimatedTimeRemaining = speedBytesPerSecond > 0
+                                ? TimeSpan.FromSeconds(remainingBytes / speedBytesPerSecond)
+                                : TimeSpan.Zero;
+
+                            progress.Report(new DownloadProgress
+                            {
+                                BytesReceived = bytesReceived,
+                                TotalBytes = totalBytes,
+                                SpeedBytesPerSecond = speedBytesPerSecond,
+                                ElapsedTime = elapsedTime,
+                                EstimatedTimeRemaining = estimatedTimeRemaining
+                            });
+                        }
+                    }
+
+                    var bytes = memoryStream.ToArray();
+                    return (true, bytes, fileName, string.Empty);
+                }
             }
             catch (Exception ex)
             {

@@ -33,6 +33,11 @@ public partial class Chat : IAsyncDisposable
     private DotNetObjectReference<Chat>? _peerRef;
     private bool _dropZoneInitialized;
     private bool _scrollToBottomRequested;
+    
+    // Download progress tracking
+    private DownloadProgress? CurrentDownloadProgress;
+    private bool IsDownloading;
+    private string CurrentDownloadFileName = "";
 
     protected override async Task OnInitializedAsync()
     {
@@ -422,6 +427,8 @@ public partial class Chat : IAsyncDisposable
             var p2pResult = await JS.InvokeAsync<PeerSendFileResult>("peerTransfer.sendFile", SelectedFriend.Id, fileName, base64, fileBytes.LongLength);
             if (p2pResult.Success)
             {
+                // Кэшируем файл для самого отправителя, чтобы он мог его скачать
+                P2pFileCache[p2pResult.Token] = (fileBytes, fileName);
                 await ApiService.StoreFileMessageAsync(SelectedFriend.Id, fileName, fileBytes.LongLength, "p2p", p2pResult.Token);
                 FileTransferStatus = $"P2P: файл '{fileName}' отправлен пользователю {SelectedFriend.DisplayName}.";
                 return;
@@ -535,17 +542,39 @@ public partial class Chat : IAsyncDisposable
             return;
         }
 
-        var (success, data, fileName, error) = await ApiService.DownloadFileAsync(fileMeta.TransferId);
-        if (!success || data == null)
-        {
-            FileTransferStatus = error;
-            return;
-        }
+        IsDownloading = true;
+        CurrentDownloadFileName = fileMeta.FileName;
+        CurrentDownloadProgress = new DownloadProgress { TotalBytes = fileMeta.FileSize };
+        StateHasChanged();
 
-        var saved = FileSaveService.SaveBytes(data, fileName);
-        FileTransferStatus = saved
-            ? $"SERVER: файл '{fileName}' сохранен."
-            : "Сохранение файла отменено.";
+        try
+        {
+            var progress = new Progress<DownloadProgress>(p =>
+            {
+                CurrentDownloadProgress = p;
+                _ = InvokeAsync(StateHasChanged);
+            });
+
+            var (success, data, fileName, error) = await ApiService.DownloadFileAsync(fileMeta.TransferId, progress);
+            
+            if (!success || data == null)
+            {
+                FileTransferStatus = error;
+                return;
+            }
+
+            var saved = FileSaveService.SaveBytes(data, fileName);
+            FileTransferStatus = saved
+                ? $"SERVER: файл '{fileName}' сохранен."
+                : "Сохранение файла отменено.";
+        }
+        finally
+        {
+            IsDownloading = false;
+            CurrentDownloadProgress = null;
+            CurrentDownloadFileName = "";
+            StateHasChanged();
+        }
     }
 
     private static bool TryParseFileMessage(ChatMessage message, out ParsedFileMessage fileMeta)

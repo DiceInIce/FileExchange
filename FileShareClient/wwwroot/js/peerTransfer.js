@@ -2,7 +2,7 @@ window.peerTransfer = (function () {
   const peers = new Map();
   let dotNetRef = null;
   const rtcConfig = { iceServers: [{ urls: "stun:stun.l.google.com:19302" }] };
-  const chunkSize = 64 * 1024; // ✅ Увеличен до 64 KB для оптимальной передачи бинарных данных
+  const chunkSize = 64 * 1024;
 
   function ensurePeer(userId, isInitiator) {
     let state = peers.get(userId);
@@ -39,13 +39,13 @@ window.peerTransfer = (function () {
 
   function setupDataChannel(state, dc) {
     state.dc = dc;
-    dc.binaryType = "arraybuffer"; // ✅ Использовать бинарные данные вместо blob
+    dc.binaryType = "arraybuffer";
     
     dc.onmessage = async (evt) => {
       try {
         const data = evt.data;
         
-        // ✅ Для текстовых сообщений сохранить JSON
+        // Для текстовых сообщений сохранить JSON
         if (typeof data === "string") {
           const msg = JSON.parse(data);
           if (msg.type === "text") {
@@ -84,7 +84,7 @@ window.peerTransfer = (function () {
           }
         }
         
-        // ✅ Для бинарных chunks - ArrayBuffer
+        // Для бинарных chunks - ArrayBuffer
         if (data instanceof ArrayBuffer) {
           state.recvChunks.push(new Uint8Array(data));
           state.recvSize += data.byteLength;
@@ -114,7 +114,7 @@ window.peerTransfer = (function () {
     }
     if (!state.dc || state.dc.readyState !== "open") return { success: false, token };
 
-    // ✅ Конвертировать base64 обратно в бинарные данные для оптимальной передачи
+    // Конвертировать base64 обратно в бинарные данные для оптимальной передачи
     const binaryString = atob(base64);
     const bytes = new Uint8Array(binaryString.length);
     for (let i = 0; i < binaryString.length; i++) {
@@ -123,7 +123,7 @@ window.peerTransfer = (function () {
 
     state.dc.send(JSON.stringify({ type: "meta", name: fileName, size, token }));
     
-    // ✅ Отправлять бинарные chunks вместо base64
+    // Отправлять бинарные chunks вместо base64
     for (let i = 0; i < bytes.length; i += chunkSize) {
       const chunk = bytes.slice(i, i + chunkSize);
       state.dc.send(chunk.buffer);
