@@ -1,15 +1,18 @@
 window.peerTransfer = (function () {
   const peers = new Map();
   let dotNetRef = null;
-  const rtcConfig = { iceServers: [{ urls: "stun:stun.l.google.com:19302" }] };
+  const rtcConfig = {
+    iceServers: [
+      { urls: "stun:stun.l.google.com:19302" },
+      { urls: "stun:stun1.l.google.com:19302" },
+      { urls: "stun:stun2.l.google.com:19302" }
+    ]
+  };
   const chunkSize = 64 * 1024;
 
-  function ensurePeer(userId, isInitiator) {
-    let state = peers.get(userId);
-    if (state) return state;
-
+  function createPeerState(userId) {
     const pc = new RTCPeerConnection(rtcConfig);
-    state = {
+    const state = {
       pc,
       userId,
       dc: null,
@@ -17,9 +20,9 @@ window.peerTransfer = (function () {
       recvChunks: [],
       recvSize: 0,
       remoteSet: false,
-      pendingCandidates: []
+      pendingCandidates: [],
+      closed: false
     };
-    peers.set(userId, state);
 
     pc.onicecandidate = (e) => {
       if (e.candidate && dotNetRef) {
@@ -27,14 +30,69 @@ window.peerTransfer = (function () {
       }
     };
 
-    if (isInitiator) {
-      const dc = pc.createDataChannel("file", { ordered: true });
+    pc.onconnectionstatechange = async () => {
+      const cs = pc.connectionState;
+      if (!dotNetRef) return;
+      // "disconnected" часто бывает кратковременным при ICE-переключениях.
+      // Пересоздаем peer только для реально терминальных состояний.
+      if (cs === "failed" || cs === "closed") {
+        state.closed = true;
+        await dotNetRef.invokeMethodAsync("OnPeerTransferStatus", "P2P: соединение разорвано, будет пересоздано при следующей отправке.");
+      }
+    };
+
+    pc.ondatachannel = (evt) => setupDataChannel(state, evt.channel);
+
+    return state;
+  }
+
+  function ensurePeer(userId, isInitiator) {
+    let state = peers.get(userId);
+    if (state && (state.closed || state.pc.connectionState === "failed" || state.pc.connectionState === "closed")) {
+      try {
+        if (state.dc) state.dc.close();
+        state.pc.close();
+      } catch {}
+      peers.delete(userId);
+      state = null;
+    }
+
+    if (!state) {
+      state = createPeerState(userId);
+      peers.set(userId, state);
+    }
+
+    if (isInitiator && (!state.dc || state.dc.readyState === "closed")) {
+      const dc = state.pc.createDataChannel("file", { ordered: true });
       setupDataChannel(state, dc);
-    } else {
-      pc.ondatachannel = (evt) => setupDataChannel(state, evt.channel);
     }
 
     return state;
+  }
+
+  function resetPeer(userId) {
+    const state = peers.get(userId);
+    if (!state) return;
+    try {
+      if (state.dc) state.dc.close();
+      state.pc.close();
+    } catch {}
+    peers.delete(userId);
+  }
+
+  async function startOffer(state, userId) {
+    const offer = await state.pc.createOffer();
+    await state.pc.setLocalDescription(offer);
+    await dotNetRef.invokeMethodAsync("SendOfferToPeer", userId, JSON.stringify(offer));
+  }
+
+  async function waitForOpenChannel(state, maxTries) {
+    let tries = 0;
+    while ((!state.dc || state.dc.readyState !== "open") && tries < maxTries) {
+      await new Promise((r) => setTimeout(r, 100));
+      tries++;
+    }
+    return !!state.dc && state.dc.readyState === "open";
   }
 
   function setupDataChannel(state, dc) {
@@ -61,18 +119,23 @@ window.peerTransfer = (function () {
             return;
           }
           if (msg.type === "end") {
+            if (!state.recvMeta) {
+              return;
+            }
+
+            const recvMeta = state.recvMeta;
             const blob = new Blob(state.recvChunks);
             const reader = new FileReader();
             reader.onload = async () => {
               if (dotNetRef) {
-                await dotNetRef.invokeMethodAsync("OnPeerTransferStatus", `P2P: файл '${state.recvMeta.name}' получен напрямую`);
+                await dotNetRef.invokeMethodAsync("OnPeerTransferStatus", `P2P: файл '${recvMeta.name}' получен напрямую`);
                 await dotNetRef.invokeMethodAsync(
                   "OnPeerFileReceived",
                   state.userId,
-                  state.recvMeta.name,
+                  recvMeta.name,
                   reader.result.split(",")[1], // base64 часть из Data URL
-                  state.recvMeta.size,
-                  state.recvMeta.token || "-"
+                  recvMeta.size,
+                  recvMeta.token || "-"
                 );
               }
             };
@@ -98,21 +161,27 @@ window.peerTransfer = (function () {
 
   async function sendFile(userId, fileName, base64, size) {
     if (!dotNetRef) return { success: false, token: "-" };
-    const state = ensurePeer(userId, true);
     const token = (crypto && crypto.randomUUID) ? crypto.randomUUID() : `${Date.now()}_${Math.random().toString(16).slice(2)}`;
+    let state = ensurePeer(userId, true);
+    let isOpen = false;
 
-    if (!state.remoteSet) {
-      const offer = await state.pc.createOffer();
-      await state.pc.setLocalDescription(offer);
-      await dotNetRef.invokeMethodAsync("SendOfferToPeer", userId, JSON.stringify(offer));
+    for (let attempt = 0; attempt < 2; attempt++) {
+      if (!state.remoteSet) {
+        await startOffer(state, userId);
+      }
+
+      // До 20 секунд: в desktop/webview и при медленном ICE 6 секунд часто мало
+      isOpen = await waitForOpenChannel(state, 200);
+      if (isOpen) break;
+
+      if (attempt === 0) {
+        await dotNetRef.invokeMethodAsync("OnPeerTransferStatus", "P2P: первая попытка не удалась, повторное соединение...");
+        resetPeer(userId);
+        state = ensurePeer(userId, true);
+      }
     }
 
-    let tries = 0;
-    while ((!state.dc || state.dc.readyState !== "open") && tries < 60) {
-      await new Promise((r) => setTimeout(r, 100));
-      tries++;
-    }
-    if (!state.dc || state.dc.readyState !== "open") return { success: false, token };
+    if (!isOpen) return { success: false, token };
 
     // Конвертировать base64 обратно в бинарные данные для оптимальной передачи
     const binaryString = atob(base64);
@@ -136,20 +205,24 @@ window.peerTransfer = (function () {
 
   async function sendText(userId, content) {
     if (!dotNetRef) return false;
-    const state = ensurePeer(userId, true);
+    let state = ensurePeer(userId, true);
+    let isOpen = false;
 
-    if (!state.remoteSet) {
-      const offer = await state.pc.createOffer();
-      await state.pc.setLocalDescription(offer);
-      await dotNetRef.invokeMethodAsync("SendOfferToPeer", userId, JSON.stringify(offer));
+    for (let attempt = 0; attempt < 2; attempt++) {
+      if (!state.remoteSet) {
+        await startOffer(state, userId);
+      }
+
+      isOpen = await waitForOpenChannel(state, 120);
+      if (isOpen) break;
+
+      if (attempt === 0) {
+        resetPeer(userId);
+        state = ensurePeer(userId, true);
+      }
     }
 
-    let tries = 0;
-    while ((!state.dc || state.dc.readyState !== "open") && tries < 40) {
-      await new Promise((r) => setTimeout(r, 100));
-      tries++;
-    }
-    if (!state.dc || state.dc.readyState !== "open") return false;
+    if (!isOpen) return false;
 
     state.dc.send(JSON.stringify({ type: "text", content }));
     return true;
