@@ -1,3 +1,4 @@
+using System.Text.Json.Serialization;
 using FileShareClient.Models;
 using FileShareClient.Services;
 using Microsoft.AspNetCore.Components;
@@ -24,10 +25,14 @@ public partial class Chat : IAsyncDisposable
     private List<User> SearchResults = new();
     private Dictionary<int, int> UnreadCounts = new();
     private Dictionary<string, (byte[] Data, string FileName)> P2pFileCache = new();
+    private readonly object _p2pInboundLock = new();
+    private readonly Dictionary<string, MemoryStream> _p2pInboundStreams = new();
     private string MessageInput = "";
     private string SearchQuery = "";
     private string FileTransferStatus = "";
     private string FileSendMode = "auto";
+    /// <summary>Лимит размера только для загрузки файла на сервер (режим SERVER).</summary>
+    private const long ServerUploadMaxBytes = 100L * 1024 * 1024;
     private string MessageSearchQuery = "";
     private string MessageDeliveryStatus = "";
     private bool IsSendingMessage;
@@ -45,7 +50,15 @@ public partial class Chat : IAsyncDisposable
     // Download progress tracking
     private DownloadProgress? CurrentDownloadProgress;
     private bool IsDownloading;
+    private bool DownloadIndicatorIsP2pLocal;
     private string CurrentDownloadFileName = "";
+
+    // P2P data channel: отправка / приём файла (прогресс из peerTransfer.js)
+    private bool ShowP2pChannelProgress;
+    private bool P2pChannelProgressIsOutgoing;
+    private string P2pChannelProgressPhase = "";
+    private string P2pChannelProgressFileName = "";
+    private DownloadProgress? P2pChannelProgress;
     private IEnumerable<User> FilteredFriends =>
         FriendFilter switch
         {
@@ -415,10 +428,15 @@ public partial class Chat : IAsyncDisposable
         FriendFilter = filter;
     }
 
+    private long MaxFileReadBytesForCurrentSendMode() =>
+        (FileSendMode ?? "auto").Equals("server", StringComparison.OrdinalIgnoreCase)
+            ? ServerUploadMaxBytes
+            : 1L << 40;
+
     private async Task OnFileSelected(InputFileChangeEventArgs e)
     {
         var file = e.File;
-        await using var stream = file.OpenReadStream(maxAllowedSize: 100 * 1024 * 1024);
+        await using var stream = file.OpenReadStream(maxAllowedSize: MaxFileReadBytesForCurrentSendMode());
         await UploadFile(stream, file.Name);
     }
 
@@ -426,10 +444,10 @@ public partial class Chat : IAsyncDisposable
     public async Task HandleDroppedFile(string fileName, byte[] fileBytes, long size)
     {
         IsDraggingFile = false;
-        // ✅ Увеличен лимит до 100 МБ в соответствии с серверным ограничением
-        if (size > 100 * 1024 * 1024)
+        var mode = (FileSendMode ?? "auto").ToLowerInvariant();
+        if (mode == "server" && size > ServerUploadMaxBytes)
         {
-            FileTransferStatus = "Файл слишком большой. Лимит 100 МБ.";
+            FileTransferStatus = "В режиме SERVER максимум 100 МБ. Для больших файлов выберите P2P или AUTO.";
             await InvokeAsync(StateHasChanged);
             return;
         }
@@ -470,12 +488,20 @@ public partial class Chat : IAsyncDisposable
 
         await using var memory = new MemoryStream();
         await stream.CopyToAsync(memory);
-        var fileBytes = memory.ToArray();
+        var fileLength = memory.Length;
         var mode = (FileSendMode ?? "auto").ToLowerInvariant();
+
+        if (mode == "server" && fileLength > ServerUploadMaxBytes)
+        {
+            FileTransferStatus = "В режиме SERVER максимальный размер файла — 100 МБ. Для больших файлов переключите режим на P2P или AUTO.";
+            AddToast(FileTransferStatus, "error");
+            return;
+        }
 
         if (mode == "server")
         {
-            await using var serverOnlyStream = new MemoryStream(fileBytes);
+            var srvBytes = memory.ToArray();
+            await using var serverOnlyStream = new MemoryStream(srvBytes);
             var (serverOnlySuccess, serverOnlyError) = await ApiService.UploadFileAsync(SelectedFriend.Id, serverOnlyStream, fileName);
             if (!serverOnlySuccess)
             {
@@ -491,19 +517,52 @@ public partial class Chat : IAsyncDisposable
 
         try
         {
-            var p2pResult = await JS.InvokeAsync<PeerSendFileResult>("peerTransfer.sendFile", SelectedFriend.Id, fileName, fileBytes, fileBytes.LongLength);
-            if (p2pResult.Success)
+            ShowP2pChannelProgress = true;
+            P2pChannelProgressIsOutgoing = true;
+            P2pChannelProgressFileName = fileName;
+            P2pChannelProgressPhase = "connecting";
+            P2pChannelProgress = new DownloadProgress
             {
-                // Кэшируем файл для самого отправителя, чтобы он мог его скачать
-                P2pFileCache[p2pResult.Token] = (fileBytes, fileName);
-                await ApiService.StoreFileMessageAsync(SelectedFriend.Id, fileName, fileBytes.LongLength, "p2p", p2pResult.Token);
-                FileTransferStatus = $"P2P: файл '{fileName}' отправлен пользователю {SelectedFriend.DisplayName}.";
-                AddToast(FileTransferStatus, "success");
-                return;
+                BytesReceived = 0,
+                TotalBytes = fileLength,
+                SpeedBytesPerSecond = 0,
+                ElapsedTime = TimeSpan.Zero,
+                EstimatedTimeRemaining = TimeSpan.Zero
+            };
+            await InvokeAsync(StateHasChanged);
+
+            try
+            {
+                memory.Position = 0;
+                using var dotnetStreamRef = new DotNetStreamReference(memory, leaveOpen: true);
+                var p2pResult = await JS.InvokeAsync<PeerSendFileResult>(
+                    "peerTransfer.sendFileStream",
+                    SelectedFriend.Id,
+                    fileName,
+                    fileLength,
+                    dotnetStreamRef);
+                if (p2pResult.Success)
+                {
+                    var sentBytes = memory.ToArray();
+                    // Кэшируем файл для самого отправителя, чтобы он мог его скачать
+                    P2pFileCache[NormalizeP2pToken(p2pResult.Token)] = (sentBytes, fileName);
+                    await ApiService.StoreFileMessageAsync(SelectedFriend.Id, fileName, fileLength, "p2p", p2pResult.Token);
+                    FileTransferStatus = $"P2P: файл '{fileName}' отправлен пользователю {SelectedFriend.DisplayName}.";
+                    AddToast(FileTransferStatus, "success");
+                    return;
+                }
             }
+            finally
+            {
+                ClearP2pChannelTransferUi();
+            }
+
+            await InvokeAsync(StateHasChanged);
         }
         catch
         {
+            ClearP2pChannelTransferUi();
+            await InvokeAsync(StateHasChanged);
             if (mode == "p2p")
             {
                 FileTransferStatus = "P2P-only режим: не удалось установить прямое соединение.";
@@ -520,7 +579,15 @@ public partial class Chat : IAsyncDisposable
         }
 
         AddToast("P2P недоступен, отправляю через сервер...", "info");
-        await using var apiStream = new MemoryStream(fileBytes);
+        if (fileLength > ServerUploadMaxBytes)
+        {
+            FileTransferStatus = "P2P недоступен, а файл больше 100 МБ — через сервер его не отправить. Проверьте соединение для P2P или уменьшите файл.";
+            AddToast(FileTransferStatus, "error");
+            return;
+        }
+
+        var fallbackBytes = memory.ToArray();
+        await using var apiStream = new MemoryStream(fallbackBytes);
         var (success, error) = await ApiService.UploadFileAsync(SelectedFriend.Id, apiStream, fileName);
         if (!success)
         {
@@ -609,28 +676,57 @@ public partial class Chat : IAsyncDisposable
                 return;
             }
 
-            var p2pSaved = FileSaveService.SaveBytes(cached.Data, cached.FileName);
-            FileTransferStatus = p2pSaved
-                ? $"P2P: файл '{cached.FileName}' сохранен."
-                : "Сохранение файла отменено.";
-            AddToast(FileTransferStatus, p2pSaved ? "success" : "info");
+            var total = cached.Data.LongLength;
+            IsDownloading = true;
+            DownloadIndicatorIsP2pLocal = true;
+            CurrentDownloadFileName = cached.FileName;
+            CurrentDownloadProgress = new DownloadProgress
+            {
+                BytesReceived = total,
+                TotalBytes = total,
+                SpeedBytesPerSecond = 0,
+                ElapsedTime = TimeSpan.Zero,
+                EstimatedTimeRemaining = TimeSpan.Zero
+            };
+            await InvokeAsync(StateHasChanged);
+
+            try
+            {
+                var p2pSaved = FileSaveService.SaveBytes(cached.Data, cached.FileName);
+                FileTransferStatus = p2pSaved
+                    ? $"P2P: файл '{cached.FileName}' сохранен."
+                    : "Сохранение файла отменено.";
+                AddToast(FileTransferStatus, p2pSaved ? "success" : "info");
+            }
+            finally
+            {
+                IsDownloading = false;
+                DownloadIndicatorIsP2pLocal = false;
+                CurrentDownloadProgress = null;
+                CurrentDownloadFileName = "";
+                StateHasChanged();
+            }
+
             return;
         }
 
+        DownloadIndicatorIsP2pLocal = false;
         IsDownloading = true;
         CurrentDownloadFileName = fileMeta.FileName;
         CurrentDownloadProgress = new DownloadProgress { TotalBytes = fileMeta.FileSize };
-        StateHasChanged();
+        await InvokeAsync(StateHasChanged);
 
         try
         {
-            var progress = new Progress<DownloadProgress>(p =>
-            {
-                CurrentDownloadProgress = p;
-                _ = InvokeAsync(StateHasChanged);
-            });
-
-            var (success, data, fileName, error) = await ApiService.DownloadFileAsync(fileMeta.TransferId, progress);
+            var (success, data, fileName, error) = await ApiService.DownloadFileAsync(
+                fileMeta.TransferId,
+                progress: null,
+                contentLengthFallback: fileMeta.FileSize,
+                progressUiAsync: async p =>
+                {
+                    CurrentDownloadProgress = p;
+                    await InvokeAsync(StateHasChanged);
+                });
             
             if (!success || data == null)
             {
@@ -648,6 +744,7 @@ public partial class Chat : IAsyncDisposable
         finally
         {
             IsDownloading = false;
+            DownloadIndicatorIsP2pLocal = false;
             CurrentDownloadProgress = null;
             CurrentDownloadFileName = "";
             StateHasChanged();
@@ -684,14 +781,14 @@ public partial class Chat : IAsyncDisposable
             var bytes = Convert.FromBase64String(parts[2]);
             var fileName = System.Text.Encoding.UTF8.GetString(bytes);
             var source = parts.Length >= 5 && !string.IsNullOrWhiteSpace(parts[4]) ? parts[4].ToLowerInvariant() : "server";
-            var token = parts.Length >= 6 ? parts[5] : "-";
+            var tokenRaw = parts.Length >= 6 ? parts[5] : "-";
             fileMeta = new ParsedFileMessage
             {
                 TransferId = transferId,
                 FileName = fileName,
                 FileSize = fileSize,
                 Source = source,
-                Token = string.IsNullOrWhiteSpace(token) ? "-" : token
+                Token = NormalizeP2pToken(tokenRaw)
             };
             return true;
         }
@@ -712,7 +809,9 @@ public partial class Chat : IAsyncDisposable
 
     private sealed class PeerSendFileResult
     {
+        [JsonPropertyName("success")]
         public bool Success { get; set; }
+        [JsonPropertyName("token")]
         public string Token { get; set; } = "-";
     }
 
@@ -757,19 +856,160 @@ public partial class Chat : IAsyncDisposable
     }
 
     [JSInvokable]
-    public Task OnPeerFileReceived(int senderId, string fileName, byte[] fileBytes, long size, string token)
+    public Task OnP2pSendProgress(int peerUserId, long sent, long total, string phase)
     {
-        try
+        if (SelectedFriend?.Id != peerUserId || !ShowP2pChannelProgress || !P2pChannelProgressIsOutgoing)
         {
-            var normalizedToken = string.IsNullOrWhiteSpace(token) ? "-" : token;
-            P2pFileCache[normalizedToken] = (fileBytes, fileName);
-            FileTransferStatus = $"P2P: получен файл '{fileName}' ({size} байт).";
-            AddToast(FileTransferStatus, "success");
+            return Task.CompletedTask;
         }
-        catch
+
+        P2pChannelProgressPhase = string.IsNullOrWhiteSpace(phase) ? "sending" : phase;
+        var displayTotal = total > 0 ? total : Math.Max(sent, 1L);
+        if (displayTotal < sent)
         {
-            FileTransferStatus = "P2P: не удалось обработать полученный файл.";
+            displayTotal = sent;
+        }
+
+        P2pChannelProgress = new DownloadProgress
+        {
+            BytesReceived = sent,
+            TotalBytes = displayTotal,
+            SpeedBytesPerSecond = 0,
+            ElapsedTime = TimeSpan.Zero,
+            EstimatedTimeRemaining = TimeSpan.Zero
+        };
+        return InvokeAsync(StateHasChanged);
+    }
+
+    [JSInvokable]
+    public Task OnP2pReceiveProgress(int senderId, long received, long total, string fileName)
+    {
+        if (SelectedFriend?.Id != senderId)
+        {
+            return Task.CompletedTask;
+        }
+
+        ShowP2pChannelProgress = true;
+        P2pChannelProgressIsOutgoing = false;
+        if (!string.IsNullOrWhiteSpace(fileName))
+        {
+            P2pChannelProgressFileName = fileName;
+        }
+
+        P2pChannelProgressPhase = received <= 0 ? "connecting" : "sending";
+        var displayTotal = total > 0 ? total : Math.Max(received, 1L);
+        if (displayTotal < received)
+        {
+            displayTotal = received;
+        }
+
+        P2pChannelProgress = new DownloadProgress
+        {
+            BytesReceived = received,
+            TotalBytes = displayTotal,
+            SpeedBytesPerSecond = 0,
+            ElapsedTime = TimeSpan.Zero,
+            EstimatedTimeRemaining = TimeSpan.Zero
+        };
+        return InvokeAsync(StateHasChanged);
+    }
+
+    private void ClearP2pChannelTransferUi()
+    {
+        ShowP2pChannelProgress = false;
+        P2pChannelProgressIsOutgoing = false;
+        P2pChannelProgress = null;
+        P2pChannelProgressFileName = "";
+        P2pChannelProgressPhase = "";
+    }
+
+    [JSInvokable]
+    public Task OnP2pInboundStart(int senderId, string token, string fileName, long expectedSize)
+    {
+        var norm = NormalizeP2pToken(token);
+        var key = P2pInboundStreamKey(senderId, norm);
+        lock (_p2pInboundLock)
+        {
+            if (_p2pInboundStreams.Remove(key, out var existing))
+            {
+                existing.Dispose();
+            }
+
+            _p2pInboundStreams[key] = new MemoryStream();
+        }
+
+        return Task.CompletedTask;
+    }
+
+    [JSInvokable]
+    public Task OnP2pInboundChunk(int senderId, string token, byte[] chunk)
+    {
+        if (chunk == null || chunk.Length == 0)
+        {
+            return Task.CompletedTask;
+        }
+
+        var norm = NormalizeP2pToken(token);
+        var key = P2pInboundStreamKey(senderId, norm);
+        lock (_p2pInboundLock)
+        {
+            if (!_p2pInboundStreams.TryGetValue(key, out var ms))
+            {
+                return Task.CompletedTask;
+            }
+
+            ms.Write(chunk, 0, chunk.Length);
+        }
+
+        return Task.CompletedTask;
+    }
+
+    [JSInvokable]
+    public async Task OnP2pInboundComplete(int senderId, string token, string fileName, long declaredSize)
+    {
+        var norm = NormalizeP2pToken(token);
+        var key = P2pInboundStreamKey(senderId, norm);
+        MemoryStream? ms;
+        lock (_p2pInboundLock)
+        {
+            _p2pInboundStreams.Remove(key, out ms);
+        }
+
+        if (SelectedFriend?.Id == senderId)
+        {
+            ClearP2pChannelTransferUi();
+        }
+
+        if (ms == null)
+        {
+            FileTransferStatus = "P2P: приём прерван (нет буфера).";
             AddToast(FileTransferStatus, "error");
+            await InvokeAsync(StateHasChanged);
+            return;
+        }
+
+        await using (ms)
+        {
+            if (ms.Length != declaredSize)
+            {
+                FileTransferStatus = $"P2P: несовпадение размера (ожидали {declaredSize} B, получено {ms.Length} B).";
+                AddToast(FileTransferStatus, "error");
+                return;
+            }
+
+            try
+            {
+                var bytes = ms.ToArray();
+                P2pFileCache[norm] = (bytes, fileName);
+                FileTransferStatus = $"P2P: получен файл '{fileName}' ({bytes.Length} байт).";
+                AddToast(FileTransferStatus, "success");
+            }
+            catch
+            {
+                FileTransferStatus = "P2P: не удалось сохранить файл в память.";
+                AddToast(FileTransferStatus, "error");
+                return;
+            }
         }
 
         if (SelectedFriend?.Id == senderId)
@@ -785,12 +1025,19 @@ public partial class Chat : IAsyncDisposable
                 {
                     ShowScrollToBottomButton = true;
                 }
+
                 StateHasChanged();
             });
         }
 
-        return InvokeAsync(StateHasChanged);
+        await InvokeAsync(StateHasChanged);
     }
+
+    private static string NormalizeP2pToken(string? token) =>
+        string.IsNullOrWhiteSpace(token) ? "-" : token.Trim();
+
+    private static string P2pInboundStreamKey(int senderId, string normalizedToken) =>
+        $"{senderId}\u001f{normalizedToken}";
 
     [JSInvokable]
     public Task OnMessagesScrolled(bool nearBottom)
@@ -905,6 +1152,16 @@ public partial class Chat : IAsyncDisposable
 
         if (_peerRef != null)
         {
+            lock (_p2pInboundLock)
+            {
+                foreach (var kv in _p2pInboundStreams)
+                {
+                    kv.Value.Dispose();
+                }
+
+                _p2pInboundStreams.Clear();
+            }
+
             await JS.InvokeVoidAsync("peerTransfer.dispose");
             _peerRef.Dispose();
         }

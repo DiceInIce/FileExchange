@@ -301,7 +301,11 @@ namespace FileShareClient.Services
             }
         }
 
-        public async Task<(bool Success, byte[]? Data, string FileName, string Error)> DownloadFileAsync(int fileId, IProgress<DownloadProgress>? progress = null)
+        public async Task<(bool Success, byte[]? Data, string FileName, string Error)> DownloadFileAsync(
+            int fileId,
+            IProgress<DownloadProgress>? progress = null,
+            long? contentLengthFallback = null,
+            Func<DownloadProgress, Task>? progressUiAsync = null)
         {
             try
             {
@@ -317,11 +321,71 @@ namespace FileShareClient.Services
                     ?? $"file_{fileId}";
                 fileName = fileName.Trim('"');
 
-                var totalBytes = response.Content.Headers.ContentLength ?? 0;
+                var headerLength = response.Content.Headers.ContentLength;
+                var totalBytes = headerLength ?? contentLengthFallback ?? 0L;
                 var startTime = DateTime.Now;
                 var bytesReceived = 0L;
                 var buffer = new byte[8192];
                 int bytesRead;
+
+                var swUi = progressUiAsync != null ? System.Diagnostics.Stopwatch.StartNew() : null;
+                long lastUiBytes = 0;
+                const int minUiIntervalMs = 120;
+                const long minUiBytesStep = 64 * 1024;
+
+                async Task ReportProgressAsync(bool forceUi)
+                {
+                    if (progress == null && progressUiAsync == null)
+                    {
+                        return;
+                    }
+
+                    var displayTotal = totalBytes > 0 ? totalBytes : Math.Max(bytesReceived, contentLengthFallback ?? 0L);
+                    if (displayTotal < bytesReceived)
+                    {
+                        displayTotal = bytesReceived;
+                    }
+
+                    var elapsedTime = DateTime.Now - startTime;
+                    var speedBytesPerSecond = elapsedTime.TotalSeconds > 0
+                        ? bytesReceived / elapsedTime.TotalSeconds
+                        : 0;
+                    var remainingBytes = displayTotal - bytesReceived;
+                    var estimatedTimeRemaining = speedBytesPerSecond > 0 && remainingBytes > 0
+                        ? TimeSpan.FromSeconds(remainingBytes / speedBytesPerSecond)
+                        : TimeSpan.Zero;
+
+                    var dp = new DownloadProgress
+                    {
+                        BytesReceived = bytesReceived,
+                        TotalBytes = displayTotal,
+                        SpeedBytesPerSecond = speedBytesPerSecond,
+                        ElapsedTime = elapsedTime,
+                        EstimatedTimeRemaining = estimatedTimeRemaining
+                    };
+
+                    progress?.Report(dp);
+
+                    if (progressUiAsync == null)
+                    {
+                        return;
+                    }
+
+                    if (!forceUi && swUi != null)
+                    {
+                        if (swUi.ElapsedMilliseconds < minUiIntervalMs
+                            && bytesReceived - lastUiBytes < minUiBytesStep
+                            && bytesReceived < displayTotal)
+                        {
+                            return;
+                        }
+
+                        swUi.Restart();
+                        lastUiBytes = bytesReceived;
+                    }
+
+                    await progressUiAsync(dp);
+                }
 
                 using (var contentStream = await response.Content.ReadAsStreamAsync())
                 using (var memoryStream = new MemoryStream())
@@ -331,26 +395,15 @@ namespace FileShareClient.Services
                         memoryStream.Write(buffer, 0, bytesRead);
                         bytesReceived += bytesRead;
 
-                        if (progress != null && totalBytes > 0)
+                        if (progress != null || progressUiAsync != null)
                         {
-                            var elapsedTime = DateTime.Now - startTime;
-                            var speedBytesPerSecond = elapsedTime.TotalSeconds > 0 
-                                ? bytesReceived / elapsedTime.TotalSeconds 
-                                : 0;
-                            var remainingBytes = totalBytes - bytesReceived;
-                            var estimatedTimeRemaining = speedBytesPerSecond > 0
-                                ? TimeSpan.FromSeconds(remainingBytes / speedBytesPerSecond)
-                                : TimeSpan.Zero;
-
-                            progress.Report(new DownloadProgress
-                            {
-                                BytesReceived = bytesReceived,
-                                TotalBytes = totalBytes,
-                                SpeedBytesPerSecond = speedBytesPerSecond,
-                                ElapsedTime = elapsedTime,
-                                EstimatedTimeRemaining = estimatedTimeRemaining
-                            });
+                            await ReportProgressAsync(forceUi: false);
                         }
+                    }
+
+                    if (bytesReceived > 0 && (progress != null || progressUiAsync != null))
+                    {
+                        await ReportProgressAsync(forceUi: true);
                     }
 
                     var bytes = memoryStream.ToArray();
