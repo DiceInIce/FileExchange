@@ -423,7 +423,7 @@ public partial class Chat : IAsyncDisposable
     }
 
     [JSInvokable]
-    public async Task HandleDroppedFile(string fileName, string base64, long size)
+    public async Task HandleDroppedFile(string fileName, byte[] fileBytes, long size)
     {
         IsDraggingFile = false;
         // ✅ Увеличен лимит до 100 МБ в соответствии с серверным ограничением
@@ -436,9 +436,7 @@ public partial class Chat : IAsyncDisposable
 
         try
         {
-            // ✅ Эффективная конвертация base64 с меньшим оверхедом памяти
-            var bytes = Convert.FromBase64String(base64);
-            await using var stream = new MemoryStream(bytes, writable: false); // read-only stream
+            await using var stream = new MemoryStream(fileBytes, writable: false); // read-only stream
             await UploadFile(stream, fileName);
             await InvokeAsync(StateHasChanged);
         }
@@ -473,7 +471,6 @@ public partial class Chat : IAsyncDisposable
         await using var memory = new MemoryStream();
         await stream.CopyToAsync(memory);
         var fileBytes = memory.ToArray();
-        var base64 = Convert.ToBase64String(fileBytes);
         var mode = (FileSendMode ?? "auto").ToLowerInvariant();
 
         if (mode == "server")
@@ -494,7 +491,7 @@ public partial class Chat : IAsyncDisposable
 
         try
         {
-            var p2pResult = await JS.InvokeAsync<PeerSendFileResult>("peerTransfer.sendFile", SelectedFriend.Id, fileName, base64, fileBytes.LongLength);
+            var p2pResult = await JS.InvokeAsync<PeerSendFileResult>("peerTransfer.sendFile", SelectedFriend.Id, fileName, fileBytes, fileBytes.LongLength);
             if (p2pResult.Success)
             {
                 // Кэшируем файл для самого отправителя, чтобы он мог его скачать
@@ -760,13 +757,12 @@ public partial class Chat : IAsyncDisposable
     }
 
     [JSInvokable]
-    public Task OnPeerFileReceived(int senderId, string fileName, string base64, long size, string token)
+    public Task OnPeerFileReceived(int senderId, string fileName, byte[] fileBytes, long size, string token)
     {
         try
         {
-            var bytes = Convert.FromBase64String(base64);
             var normalizedToken = string.IsNullOrWhiteSpace(token) ? "-" : token;
-            P2pFileCache[normalizedToken] = (bytes, fileName);
+            P2pFileCache[normalizedToken] = (fileBytes, fileName);
             FileTransferStatus = $"P2P: получен файл '{fileName}' ({size} байт).";
             AddToast(FileTransferStatus, "success");
         }

@@ -127,19 +127,19 @@ window.peerTransfer = (function () {
             const blob = new Blob(state.recvChunks);
             const reader = new FileReader();
             reader.onload = async () => {
-              if (dotNetRef) {
+              if (dotNetRef && reader.result instanceof ArrayBuffer) {
                 await dotNetRef.invokeMethodAsync("OnPeerTransferStatus", `P2P: файл '${recvMeta.name}' получен напрямую`);
                 await dotNetRef.invokeMethodAsync(
                   "OnPeerFileReceived",
                   state.userId,
                   recvMeta.name,
-                  reader.result.split(",")[1], // base64 часть из Data URL
+                  new Uint8Array(reader.result),
                   recvMeta.size,
                   recvMeta.token || "-"
                 );
               }
             };
-            reader.readAsDataURL(blob);
+            reader.readAsArrayBuffer(blob);
             state.recvMeta = null;
             state.recvChunks = [];
             state.recvSize = 0;
@@ -159,23 +159,27 @@ window.peerTransfer = (function () {
     };
   }
 
-  async function sendFile(userId, fileName, base64, size) {
+  async function sendFile(userId, fileName, fileData, size) {
     if (!dotNetRef) return { success: false, token: "-" };
     const token = (crypto && crypto.randomUUID) ? crypto.randomUUID() : `${Date.now()}_${Math.random().toString(16).slice(2)}`;
     let state = ensurePeer(userId, true);
     let isOpen = false;
 
-    for (let attempt = 0; attempt < 2; attempt++) {
+    // Для больших файлов (>10MB) увеличить таймаут и количество попыток
+    const isLargeFile = size > 10 * 1024 * 1024;
+    const maxTries = isLargeFile ? 400 : 200; // 40 сек для больших, 20 сек для маленьких
+    const maxAttempts = isLargeFile ? 3 : 2; // 3 попытки для больших
+
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
       if (!state.remoteSet) {
         await startOffer(state, userId);
       }
 
-      // До 20 секунд: в desktop/webview и при медленном ICE 6 секунд часто мало
-      isOpen = await waitForOpenChannel(state, 200);
+      isOpen = await waitForOpenChannel(state, maxTries);
       if (isOpen) break;
 
-      if (attempt === 0) {
-        await dotNetRef.invokeMethodAsync("OnPeerTransferStatus", "P2P: первая попытка не удалась, повторное соединение...");
+      if (attempt < maxAttempts - 1) {
+        await dotNetRef.invokeMethodAsync("OnPeerTransferStatus", `P2P: попытка ${attempt + 1} не удалась, повторное соединение...`);
         resetPeer(userId);
         state = ensurePeer(userId, true);
       }
@@ -183,19 +187,18 @@ window.peerTransfer = (function () {
 
     if (!isOpen) return { success: false, token };
 
-    // Конвертировать base64 обратно в бинарные данные для оптимальной передачи
-    const binaryString = atob(base64);
-    const bytes = new Uint8Array(binaryString.length);
-    for (let i = 0; i < binaryString.length; i++) {
-      bytes[i] = binaryString.charCodeAt(i);
-    }
+    const bytes = fileData instanceof Uint8Array ? fileData : new Uint8Array(fileData);
 
     state.dc.send(JSON.stringify({ type: "meta", name: fileName, size, token }));
     
-    // Отправлять бинарные chunks вместо base64
-    for (let i = 0; i < bytes.length; i += chunkSize) {
-      const chunk = bytes.slice(i, i + chunkSize);
+    // Отправлять бинарные chunks напрямую
+    const sendChunkSize = isLargeFile ? 128 * 1024 : chunkSize; // 128KB для больших файлов
+    for (let i = 0; i < bytes.length; i += sendChunkSize) {
+      const chunk = bytes.slice(i, i + sendChunkSize);
       state.dc.send(chunk.buffer);
+      if (isLargeFile) {
+        await new Promise(r => setTimeout(r, 5)); // Пауза 5ms для больших файлов
+      }
     }
     
     state.dc.send(JSON.stringify({ type: "end" }));

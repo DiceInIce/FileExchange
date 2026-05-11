@@ -29,23 +29,15 @@ window.chatFileDrop = {
       if (!files || files.length === 0) return;
 
       const file = files[0];
-      
-      // ✅ Использовать слайсинг вместо readAsDataURL для больших файлов
       const reader = new FileReader();
       reader.onload = function () {
         const result = reader.result;
-        if (typeof result !== "string") return;
-        const comma = result.indexOf(",");
-        if (comma < 0) return;
-        const base64 = result.substring(comma + 1);
-        dotNetRef.invokeMethodAsync("HandleDroppedFile", file.name, base64, file.size);
+        if (!(result instanceof ArrayBuffer)) return;
+        const bytes = new Uint8Array(result);
+        dotNetRef.invokeMethodAsync("HandleDroppedFile", file.name, bytes, file.size);
       };
-      
-      // Читать только первый кусок для проверки, остальное будет отправлено с потоком
-      // Если нужна полная поддержка потокового чтения, можно применить:
-      const chunkToRead = Math.min(file.size, 5 * 1024 * 1024); // Читать максимум 5 MB для base64 конвертации
-      const blob = file.slice(0, chunkToRead);
-      reader.readAsDataURL(blob);
+
+      reader.readAsArrayBuffer(file);
     };
 
     element.__chatDropHandlers = { onDragEnter, onDragOver, onDragLeave, onDrop };
