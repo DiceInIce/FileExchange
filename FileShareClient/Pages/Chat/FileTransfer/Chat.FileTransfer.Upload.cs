@@ -126,7 +126,7 @@ public partial class Chat
                 {
                     var sentBytes = memory.ToArray();
                     // Кэшируем файл для самого отправителя, чтобы он мог его скачать
-                    P2pFileCache[NormalizeP2pToken(p2pResult.Token)] = (sentBytes, fileName);
+                    P2pFileCache[ChatFileMessageParser.NormalizeP2pToken(p2pResult.Token)] = (sentBytes, fileName);
                     await ApiService.StoreFileMessageAsync(SelectedFriend.Id, fileName, fileLength, "p2p", p2pResult.Token);
                     FileTransferStatus = $"P2P: файл '{fileName}' отправлен пользователю {SelectedFriend.DisplayName}.";
                     AddToast(FileTransferStatus, "success");

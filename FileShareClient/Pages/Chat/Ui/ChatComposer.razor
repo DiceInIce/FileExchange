@@ -1,0 +1,181 @@
+@namespace FileShareClient.Pages
+@using FileShareClient.Models
+@using Microsoft.AspNetCore.Components.Forms
+@using Microsoft.AspNetCore.Components.Web
+@using Microsoft.JSInterop
+@inject IJSRuntime JSRuntime
+
+<div id="chat-drop-zone" style="padding: 15px; border-top: 1px solid var(--fs-border); background: @(IsDraggingFile ? "var(--fs-bg-drop-active)" : "var(--fs-bg-drop)");">
+    <div style="display: flex; gap: 10px; margin-bottom: 10px;">
+        <InputFile id="file-picker" OnChange="OnFileSelected" style="display:none;" />
+        <label for="file-picker" title="Прикрепить файл" class="fs-interactive fs-focusable" aria-label="Выбрать файл для отправки" style="display: inline-flex; align-items: center; justify-content: center; width: 40px; border: 1px solid var(--fs-border-soft); border-radius: 8px; cursor: pointer; background: var(--fs-bg-input); font-size: 18px; @(IsSendingMessage ? "opacity:0.55; pointer-events:none;" : "")">📎</label>
+        <textarea @ref="_messageTextarea"
+                  value="@MessageInput" @oninput="OnMessageInput"
+                  placeholder="Введите сообщение..." aria-label="Поле ввода сообщения"
+                  @onkeydown="OnMessageKeyDown"
+                  disabled="@IsSendingMessage"
+                  rows="2"
+                  style="flex: 1; padding: 10px; border: 1px solid var(--fs-border-soft); border-radius: 8px; background:var(--fs-bg-input); resize:none; min-height:42px; @(IsSendingMessage ? "opacity:0.85;" : "")"></textarea>
+        <button type="button" @onclick="SendMessage" disabled="@IsSendingMessage" class="fs-interactive fs-focusable" aria-label="Отправить сообщение" aria-busy="@IsSendingMessage" style="padding: 10px 20px; background: var(--fs-green); color: white; border: none; border-radius: 8px; font-weight: 500; display:inline-flex; align-items:center; gap:8px; @(IsSendingMessage ? "opacity:0.85; cursor:wait;" : "cursor: pointer;")">
+            @if (IsSendingMessage)
+            {
+                <span class="fs-inline-spinner" aria-hidden="true"></span>
+            }
+            <span>Отправить</span>
+        </button>
+    </div>
+    <div style="display:flex; justify-content:space-between; align-items:center; font-size:0.8em; color:var(--fs-text-muted); margin-bottom:6px; gap:10px;">
+        <span style="display:inline-flex; align-items:center; gap:8px;">
+            @if (IsSendingMessage)
+            {
+                <span class="fs-inline-spinner" aria-hidden="true"></span>
+            }
+            <span>@(IsSendingMessage ? "Отправляется…" : MessageDeliveryStatus)</span>
+        </span>
+    </div>
+    <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px; font-size:0.8em; color:var(--fs-text-muted);">
+        <span>Режим отправки файла:</span>
+        <select value="@FileSendMode" @onchange="OnFileSendModeChange" aria-label="Выбор режима отправки файла" style="padding: 4px 6px; border: 1px solid var(--fs-border-soft); border-radius: 8px; background:var(--fs-bg-input);">
+            <option value="auto">AUTO (P2P -> fallback SERVER)</option>
+            <option value="p2p">P2P only</option>
+            <option value="server">SERVER only</option>
+        </select>
+    </div>
+    <div style="font-size: 0.75em; color: var(--fs-text-faint); margin-bottom: 4px;">SERVER: до 100 МБ. P2P / AUTO: без лимита размера в приложении (ограничены только памятью и стабильностью канала).</div>
+    <div style="font-size: 0.8em; color: var(--fs-text-muted);">Перетащите файл в эту область или нажмите на 📎</div>
+    @if (!string.IsNullOrWhiteSpace(FileTransferStatus))
+    {
+        <div style="margin-top: 6px; font-size: 0.85em; color: #355f52;">@FileTransferStatus</div>
+    }
+    @if (ShowP2pChannelProgress && P2pChannelProgress != null)
+    {
+        <div style="margin-top: 12px; padding: 10px; background: #edeaf5; border: 1px solid #c9c0db; border-radius: 8px;">
+            <div style="font-size: 0.9em; font-weight: 500; margin-bottom: 8px; color: #4a3f6b;">
+                📡 @(P2pChannelProgressIsOutgoing ? "Отправка (P2P):" : "Приём (P2P):") @P2pChannelProgressFileName
+            </div>
+            @if (P2pChannelProgressPhase == "connecting")
+            {
+                <div style="font-size: 0.8em; color: var(--fs-text-muted); margin-bottom: 8px;">@(P2pChannelProgressIsOutgoing ? "Установка WebRTC и data channel…" : "Ожидание данных по каналу…")</div>
+            }
+            else if (P2pChannelProgressPhase == "sending")
+            {
+                <div style="font-size: 0.8em; color: var(--fs-text-muted); margin-bottom: 8px;">@(P2pChannelProgressIsOutgoing ? "Передача по прямому каналу…" : "Получение по прямому каналу…")</div>
+            }
+            <div style="height: 20px; background: #dcd4ea; border-radius: 10px; overflow: hidden; margin-bottom: 8px;">
+                <div style="height: 100%; background: linear-gradient(90deg, #7b68c8, #5c4d9e); width: @(P2pChannelProgress.PercentComplete)%; transition: width 0.2s ease; display: flex; align-items: center; justify-content: center; font-size: 0.7em; color: white; font-weight: bold;">
+                    @if (P2pChannelProgress.PercentComplete > 10)
+                    {
+                        <span>@(P2pChannelProgress.PercentComplete.ToString("0.0"))%</span>
+                    }
+                </div>
+            </div>
+            <div style="display: flex; justify-content: space-between; font-size: 0.8em; color: var(--fs-text-muted); flex-wrap: wrap; gap: 8px;">
+                <div>
+                    <span style="font-weight: 500;">Байты:</span>
+                    <span>@P2pChannelProgress.GetFormattedSize(P2pChannelProgress.BytesReceived) / @P2pChannelProgress.GetFormattedSize(P2pChannelProgress.TotalBytes)</span>
+                </div>
+                <div>
+                    <span style="font-weight: 500;">Скорость:</span>
+                    <span>—</span>
+                </div>
+                <div>
+                    <span style="font-weight: 500;">ETA:</span>
+                    <span>—</span>
+                </div>
+            </div>
+        </div>
+    }
+    @if (IsDownloading && CurrentDownloadProgress != null)
+    {
+        <div style="margin-top: 12px; padding: 10px; background: #eaf5ef; border: 1px solid var(--fs-border-soft); border-radius: 8px;">
+            <div style="font-size: 0.9em; font-weight: 500; margin-bottom: 8px; color: #2f6f56;">
+                📥 @(DownloadIndicatorIsP2pLocal ? "P2P · сохранение на диск:" : "Загрузка:") @CurrentDownloadFileName
+            </div>
+            @if (DownloadIndicatorIsP2pLocal)
+            {
+                <div style="font-size: 0.8em; color: var(--fs-text-muted); margin-bottom: 8px;">Файл уже получен по P2P; выберите папку в диалоге сохранения.</div>
+            }
+
+            <div style="height: 20px; background: #dbe7e1; border-radius: 10px; overflow: hidden; margin-bottom: 8px;">
+                <div style="height: 100%; background: linear-gradient(90deg, #4f8a72, #3f725d); width: @(CurrentDownloadProgress.PercentComplete)%; transition: width 0.3s ease; display: flex; align-items: center; justify-content: center; font-size: 0.7em; color: white; font-weight: bold;">
+                    @if (CurrentDownloadProgress.PercentComplete > 10)
+                    {
+                        <span>@(CurrentDownloadProgress.PercentComplete.ToString("0.0"))%</span>
+                    }
+                </div>
+            </div>
+
+            <div style="display: flex; justify-content: space-between; font-size: 0.8em; color: var(--fs-text-muted); flex-wrap: wrap; gap: 8px;">
+                <div>
+                    <span style="font-weight: 500;">@(DownloadIndicatorIsP2pLocal ? "Размер:" : "Загружено:")</span>
+                    <span>@CurrentDownloadProgress.GetFormattedSize(CurrentDownloadProgress.BytesReceived) / @CurrentDownloadProgress.GetFormattedSize(CurrentDownloadProgress.TotalBytes)</span>
+                </div>
+                <div>
+                    <span style="font-weight: 500;">Скорость:</span>
+                    <span>@(DownloadIndicatorIsP2pLocal ? "—" : CurrentDownloadProgress.GetFormattedSpeed())</span>
+                </div>
+                <div>
+                    <span style="font-weight: 500;">Осталось:</span>
+                    <span>@(DownloadIndicatorIsP2pLocal ? "—" : CurrentDownloadProgress.EstimatedTimeRemaining.TotalSeconds > 0 ? $"{(int)CurrentDownloadProgress.EstimatedTimeRemaining.TotalSeconds}s" : "вычисление...")</span>
+                </div>
+            </div>
+        </div>
+    }
+</div>
+
+@code {
+    private ElementReference _messageTextarea;
+    private bool _messageTextareaEnterGuardReady;
+
+    [Parameter] public bool IsDraggingFile { get; set; }
+    [Parameter] public string MessageInput { get; set; } = "";
+    [Parameter] public EventCallback<string> MessageInputChanged { get; set; }
+    [Parameter] public EventCallback<KeyboardEventArgs> OnMessageKeyDown { get; set; }
+    [Parameter] public EventCallback SendMessage { get; set; }
+    [Parameter] public bool IsSendingMessage { get; set; }
+    [Parameter] public string MessageDeliveryStatus { get; set; } = "";
+    [Parameter] public string FileSendMode { get; set; } = "auto";
+    [Parameter] public EventCallback<string> FileSendModeChanged { get; set; }
+    [Parameter] public string FileTransferStatus { get; set; } = "";
+    [Parameter] public bool ShowP2pChannelProgress { get; set; }
+    [Parameter] public bool P2pChannelProgressIsOutgoing { get; set; }
+    [Parameter] public string P2pChannelProgressPhase { get; set; } = "";
+    [Parameter] public string P2pChannelProgressFileName { get; set; } = "";
+    [Parameter] public DownloadProgress? P2pChannelProgress { get; set; }
+    [Parameter] public bool IsDownloading { get; set; }
+    [Parameter] public bool DownloadIndicatorIsP2pLocal { get; set; }
+    [Parameter] public string CurrentDownloadFileName { get; set; } = "";
+    [Parameter] public DownloadProgress? CurrentDownloadProgress { get; set; }
+    [Parameter] public EventCallback<InputFileChangeEventArgs> OnFileSelected { get; set; }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_messageTextareaEnterGuardReady)
+            return;
+
+        try
+        {
+            await JSRuntime.InvokeVoidAsync("chatComposer.initMessageTextarea", _messageTextarea);
+        }
+        catch
+        {
+            await Task.Delay(100);
+            try
+            {
+                await JSRuntime.InvokeVoidAsync("chatComposer.initMessageTextarea", _messageTextarea);
+            }
+            catch
+            {
+                // без JS-защиты поведение как раньше (Enter может оставить перевод строки)
+            }
+        }
+
+        _messageTextareaEnterGuardReady = true;
+    }
+
+    private Task OnMessageInput(ChangeEventArgs e) =>
+        MessageInputChanged.InvokeAsync(e.Value?.ToString() ?? "");
+
+    private Task OnFileSendModeChange(ChangeEventArgs e) =>
+        FileSendModeChanged.InvokeAsync(e.Value?.ToString() ?? "auto");
+}

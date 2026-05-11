@@ -46,6 +46,22 @@ html, body {
     outline-offset: 2px;
 }
 
+@keyframes fs-spin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+.fs-inline-spinner {
+    width: 16px;
+    height: 16px;
+    border: 2px solid var(--fs-border-soft);
+    border-top-color: var(--fs-green);
+    border-radius: 50%;
+    animation: fs-spin 0.65s linear infinite;
+    flex-shrink: 0;
+}
+
 @media (prefers-reduced-motion: reduce) {
     .fs-interactive {
         transition: none;
@@ -56,6 +72,11 @@ html, body {
         transform: none;
         box-shadow: none;
         filter: none;
+    }
+
+    .fs-inline-spinner {
+        animation: none;
+        border-top-color: var(--fs-green);
     }
 }
 

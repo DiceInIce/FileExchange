@@ -1,6 +1,7 @@
 using FileShareClient.Models;
 using FileShareClient.Services;
 using Microsoft.AspNetCore.Components;
+using Microsoft.AspNetCore.SignalR.Client;
 
 namespace FileShareClient.Pages;
 
@@ -125,5 +126,51 @@ public partial class Chat
             }
             StateHasChanged();
         });
+    }
+
+    private void HandleConnectionStateChanged(HubConnectionState state)
+    {
+        _hubConnectionState = state;
+        _ = InvokeAsync(StateHasChanged);
+    }
+
+    private bool _retryingRealtime;
+
+    private async Task RetryRealtimeConnection()
+    {
+        if (_retryingRealtime || ApiService.Token == null)
+            return;
+
+        _retryingRealtime = true;
+        try
+        {
+            if (ChatService.IsConnected)
+            {
+                _hubConnectionState = HubConnectionState.Connected;
+                StateHasChanged();
+                return;
+            }
+
+            await ChatService.ConnectAsync(ApiService.ServerUrl, ApiService.Token);
+            _hubConnectionState = ChatService.GetConnectionState();
+            if (ChatService.IsConnected)
+            {
+                AddToast("Соединение восстановлено.", "success");
+            }
+            else
+            {
+                AddToast("Не удалось подключиться к серверу.", "error");
+            }
+        }
+        catch (Exception ex)
+        {
+            _hubConnectionState = HubConnectionState.Disconnected;
+            AddToast($"Ошибка подключения: {ex.Message}", "error");
+        }
+        finally
+        {
+            _retryingRealtime = false;
+            StateHasChanged();
+        }
     }
 }

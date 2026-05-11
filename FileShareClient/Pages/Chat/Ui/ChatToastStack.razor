@@ -1,0 +1,18 @@
+@namespace FileShareClient.Pages
+@using FileShareClient.Models
+
+<div style="position: fixed; left: 50%; transform: translateX(-50%); top: 52px; z-index: 10; display: flex; flex-direction: column; gap: 8px; align-items: center;">
+    @foreach (var toast in Items)
+    {
+        var bg = toast.Kind == "error" ? "var(--fs-danger)" : toast.Kind == "success" ? "var(--fs-green)" : "#46665b";
+        <div style="min-width:260px; max-width:360px; background:@bg; color:white; border-radius:10px; padding:10px 12px; box-shadow:0 10px 20px rgba(0,0,0,0.18); display:flex; justify-content:space-between; gap:8px;">
+            <span>@toast.Text</span>
+            <button type="button" @onclick="@(() => OnDismiss.InvokeAsync(toast.Id))" class="fs-focusable" aria-label="Закрыть уведомление" style="border:none; background:transparent; color:white; cursor:pointer;">x</button>
+        </div>
+    }
+</div>
+
+@code {
+    [Parameter] public IReadOnlyList<ToastItem> Items { get; set; } = Array.Empty<ToastItem>();
+    [Parameter] public EventCallback<string> OnDismiss { get; set; }
+}

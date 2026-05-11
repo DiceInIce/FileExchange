@@ -85,11 +85,19 @@ public partial class Chat
 
     private async Task RemoveFriend()
     {
-        if (SelectedFriend != null && await ApiService.RemoveFriendAsync(SelectedFriend.Id))
+        if (SelectedFriend == null)
+            return;
+
+        if (await ApiService.RemoveFriendAsync(SelectedFriend.Id))
         {
             Friends.Remove(SelectedFriend);
             SelectedFriend = null;
+            Messages.Clear();
             StateHasChanged();
+        }
+        else
+        {
+            AddToast("Не удалось удалить из друзей.", "error");
         }
     }
 

@@ -1,3 +1,4 @@
+using FileShareClient.Models;
 using Microsoft.AspNetCore.Components;
 using Microsoft.JSInterop;
 
@@ -27,7 +28,7 @@ public partial class Chat
             return;
         }
 
-        Toasts.Add(new ToastMessage
+        Toasts.Add(new ToastItem
         {
             Id = Guid.NewGuid().ToString("N"),
             Text = text,
@@ -38,11 +39,15 @@ public partial class Chat
             Toasts.RemoveAt(0);
         }
 
-        Task.Delay(5000).ContinueWith(_ =>
+        var dismissId = Toasts[^1].Id;
+        _ = InvokeAsync(async () =>
         {
-            if (Toasts.Count > 0)
+            await Task.Delay(5000);
+            var idx = Toasts.FindIndex(t => t.Id == dismissId);
+            if (idx >= 0)
             {
-                Toasts.RemoveAt(0);
+                Toasts.RemoveAt(idx);
+                StateHasChanged();
             }
         });
     }
@@ -50,13 +55,6 @@ public partial class Chat
     private void DismissToast(string id)
     {
         Toasts.RemoveAll(t => t.Id == id);
-    }
-
-    private sealed class ToastMessage
-    {
-        public string Id { get; set; } = string.Empty;
-        public string Text { get; set; } = string.Empty;
-        public string Kind { get; set; } = "info";
     }
 
     private void Logout()

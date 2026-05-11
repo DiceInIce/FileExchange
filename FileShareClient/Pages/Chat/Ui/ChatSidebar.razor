@@ -1,0 +1,122 @@
+@namespace FileShareClient.Pages
+@using FileShareClient.Models
+
+<aside style="width: 300px; border-right: 1px solid var(--fs-border); overflow-y: auto; background: var(--fs-bg-panel);">
+    <div style="padding: 15px; border-bottom: 1px solid var(--fs-border); background: var(--fs-bg-panel-soft);">
+        <h3 style="margin: 0 0 10px 0;">FileShare</h3>
+        @if (CurrentUser != null)
+        {
+            <p style="margin: 5px 0; font-size: 0.9em; color: var(--fs-text-muted);">@CurrentUser.Username</p>
+            <button type="button" @onclick="OnLogout" class="fs-interactive fs-focusable" aria-label="Выйти из аккаунта" style="width: 100%; padding: 8px; background: #e5efea; border: 1px solid var(--fs-border-soft); cursor: pointer; border-radius: 8px; font-size: 0.9em; color: var(--fs-text);">Выход</button>
+        }
+    </div>
+
+    <div style="padding: 15px; border-bottom: 1px solid var(--fs-border); position: sticky; top: 0; z-index: 3; background: var(--fs-bg-panel);">
+        <h4 style="margin: 0 0 10px 0; font-size: 1em;">Друзья</h4>
+        <div style="display:flex; gap:6px; margin-bottom:10px;">
+            <button type="button" @onclick="@(() => FriendFilterChanged.InvokeAsync("all"))" class="fs-interactive fs-focusable" aria-label="Показать всех друзей" style="padding:4px 8px; border:1px solid var(--fs-border-soft); border-radius:999px; background:@(FriendFilter=="all" ? "var(--fs-green)" : "var(--fs-bg-input)"); color:@(FriendFilter=="all" ? "white" : "var(--fs-text-muted)");">Все</button>
+            <button type="button" @onclick="@(() => FriendFilterChanged.InvokeAsync("online"))" class="fs-interactive fs-focusable" aria-label="Показать друзей онлайн" style="padding:4px 8px; border:1px solid var(--fs-border-soft); border-radius:999px; background:@(FriendFilter=="online" ? "var(--fs-green)" : "var(--fs-bg-input)"); color:@(FriendFilter=="online" ? "white" : "var(--fs-text-muted)");">Онлайн</button>
+            <button type="button" @onclick="@(() => FriendFilterChanged.InvokeAsync("unread"))" class="fs-interactive fs-focusable" aria-label="Показать друзей с непрочитанными" style="padding:4px 8px; border:1px solid var(--fs-border-soft); border-radius:999px; background:@(FriendFilter=="unread" ? "var(--fs-green)" : "var(--fs-bg-input)"); color:@(FriendFilter=="unread" ? "white" : "var(--fs-text-muted)");">Непроч.</button>
+        </div>
+        @if (FilteredFriends.Any())
+        {
+            @foreach (var friend in FilteredFriends)
+            {
+                <div style="padding: 10px; cursor: pointer; background: @(SelectedFriend?.Id == friend.Id ? "var(--fs-bg-message-own)" : "transparent"); border-radius: 8px; margin-bottom: 5px; border-left: 3px solid @(SelectedFriend?.Id == friend.Id ? "var(--fs-green)" : "transparent");"
+                     @onclick="@(() => SelectFriend.InvokeAsync(friend))">
+                    <div style="display: flex; justify-content: space-between; align-items: center;">
+                        <span style="font-weight: 500;">@friend.DisplayName</span>
+                        <div style="display: flex; align-items: center; gap: 6px;">
+                            @if (UnreadCounts.TryGetValue(friend.Id, out var unread) && unread > 0)
+                            {
+                                <span style="min-width: 20px; height: 20px; padding: 0 6px; border-radius: 10px; background: #d46666; color: white; font-size: 0.75em; display: inline-flex; align-items: center; justify-content: center;">@unread</span>
+                            }
+                            <span style="margin-left: 5px; color: @(friend.IsOnline ? "var(--fs-online)" : "var(--fs-offline)"); font-size: 0.8em;">@(friend.IsOnline ? "●" : "○")</span>
+                        </div>
+                    </div>
+                </div>
+            }
+        }
+        else
+        {
+            <p style="font-size: 0.9em; color: var(--fs-text-faint); margin: 0;">Нет друзей для выбранного фильтра</p>
+        }
+    </div>
+
+    @if (PendingRequests.Count > 0)
+    {
+        <div style="padding: 15px; border-bottom: 1px solid var(--fs-border);">
+            <h4 style="margin: 0 0 10px 0; font-size: 1em;">Запросы дружбы (@PendingRequests.Count)</h4>
+            @foreach (var request in PendingRequests)
+            {
+                <div style="padding: 8px; margin-bottom: 8px; border: 1px solid var(--fs-border); border-radius: 8px; background: #f3f8f5;">
+                    <p style="margin: 0 0 8px 0; font-size: 0.9em; font-weight: 500;">@request.User?.Username</p>
+                    <div style="display: flex; gap: 5px;">
+                        <button type="button" @onclick="@(() => AcceptFriend.InvokeAsync(request.User?.Id ?? 0))" class="fs-interactive fs-focusable" aria-label="Принять заявку в друзья" style="flex: 1; padding: 4px; background: var(--fs-green); color: white; border: none; cursor: pointer; border-radius: 6px; font-size: 0.8em;">✓</button>
+                        <button type="button" @onclick="@(() => RejectFriend.InvokeAsync(request.User?.Id ?? 0))" class="fs-interactive fs-focusable" aria-label="Отклонить заявку в друзья" style="flex: 1; padding: 4px; background: var(--fs-danger); color: white; border: none; cursor: pointer; border-radius: 6px; font-size: 0.8em;">✕</button>
+                    </div>
+                </div>
+            }
+        </div>
+    }
+
+    <div style="padding: 15px;">
+        <h4 style="margin: 0 0 10px 0; font-size: 1em;">Найти пользователя</h4>
+        <div style="display: flex; gap: 5px; margin-bottom: 10px;">
+            <input type="text" value="@SearchQuery" @oninput="OnSearchQueryInput" placeholder="Поиск..." aria-label="Поиск пользователей"
+                   style="flex: 1; padding: 8px; border: 1px solid var(--fs-border-soft); border-radius: 8px; font-size: 0.9em; background:var(--fs-bg-input);" />
+            <button type="button" @onclick="PerformSearch" class="fs-interactive fs-focusable" aria-label="Искать пользователя" style="padding: 8px 12px; background: var(--fs-green); color: white; border: none; cursor: pointer; border-radius: 8px;">🔍</button>
+        </div>
+        @if (SearchResults.Count > 0)
+        {
+            @foreach (var user in SearchResults.Take(5))
+            {
+                var isFriend = Friends.Any(f => f.Id == user.Id);
+                var hasOutgoingRequest = SentRequestUserIds.Contains(user.Id);
+                var isPendingIncoming = PendingRequests.Any(r => r.UserId == user.Id);
+                var canSendRequest = !isFriend && !hasOutgoingRequest && !isPendingIncoming;
+                <div style="padding: 8px; cursor: pointer; background: #f4f9f6; border-radius: 8px; margin-bottom: 5px; display: flex; justify-content: space-between; align-items: center; border:1px solid var(--fs-border);"
+                     @onclick="@(() => SearchItemClick.InvokeAsync((user.Id, canSendRequest)))">
+                    <span style="font-size: 0.9em;">@user.Username</span>
+                    <button type="button"
+                            disabled="@(!canSendRequest)"
+                            @onclick:stopPropagation="true"
+                            @onclick="@(() => SendFriendRequest.InvokeAsync(user.Id))"
+                            class="fs-interactive fs-focusable"
+                            aria-label="Отправить заявку в друзья"
+                            style="padding: 4px 8px; background: @(canSendRequest ? "var(--fs-green)" : "#9bb0a8"); color: white; border: none; cursor: @(canSendRequest ? "pointer" : "default"); border-radius: 6px; font-size: 0.8em;">
+                        @(isFriend ? "Друг" : hasOutgoingRequest ? "Отправлено" : isPendingIncoming ? "Входящая" : "+")
+                    </button>
+                </div>
+            }
+        }
+    </div>
+</aside>
+
+@code {
+    [Parameter] public User? CurrentUser { get; set; }
+    [Parameter] public IEnumerable<User> FilteredFriends { get; set; } = Array.Empty<User>();
+    [Parameter] public User? SelectedFriend { get; set; }
+    [Parameter] public IReadOnlyDictionary<int, int> UnreadCounts { get; set; } = new Dictionary<int, int>();
+    [Parameter] public string FriendFilter { get; set; } = "all";
+    [Parameter] public IReadOnlyList<Friendship> PendingRequests { get; set; } = Array.Empty<Friendship>();
+    [Parameter] public IReadOnlyList<User> SearchResults { get; set; } = Array.Empty<User>();
+    [Parameter] public string SearchQuery { get; set; } = "";
+    [Parameter] public IReadOnlyList<User> Friends { get; set; } = Array.Empty<User>();
+    [Parameter] public HashSet<int> SentRequestUserIds { get; set; } = new();
+
+    [Parameter] public EventCallback OnLogout { get; set; }
+    [Parameter] public EventCallback<string> FriendFilterChanged { get; set; }
+    [Parameter] public EventCallback<User> SelectFriend { get; set; }
+    [Parameter] public EventCallback<int> AcceptFriend { get; set; }
+    [Parameter] public EventCallback<int> RejectFriend { get; set; }
+    [Parameter] public EventCallback<string> SearchQueryChanged { get; set; }
+    [Parameter] public EventCallback OnPerformSearch { get; set; }
+    [Parameter] public EventCallback<(int UserId, bool CanSendRequest)> SearchItemClick { get; set; }
+    [Parameter] public EventCallback<int> SendFriendRequest { get; set; }
+
+    private Task OnSearchQueryInput(ChangeEventArgs e) =>
+        SearchQueryChanged.InvokeAsync(e.Value?.ToString() ?? "");
+
+    private Task PerformSearch() => OnPerformSearch.InvokeAsync();
+}

@@ -1,0 +1,140 @@
+@namespace FileShareClient.Pages
+@using System.Globalization
+@using FileShareClient.Models
+
+@if (SelectedFriend != null)
+{
+    <div style="padding: 15px; border-bottom: 1px solid var(--fs-border); background: var(--fs-bg-chat-header); display: flex; justify-content: space-between; align-items: center;">
+        <div>
+            <h2 style="margin: 0; font-size: 1.2em;">@SelectedFriend.DisplayName</h2>
+            <small style="color: @(SelectedFriend.IsOnline ? "var(--fs-online)" : "var(--fs-offline)");">@(SelectedFriend.IsOnline ? "В сети" : "Не в сети")</small>
+        </div>
+        <input type="text" value="" @oninput="OnMessageSearchInput" placeholder="Поиск в сообщениях..." aria-label="Поиск по сообщениям текущего чата" style="padding:8px 10px; border:1px solid var(--fs-border-soft); border-radius:8px; background:var(--fs-bg-input); min-width:220px;" />
+        <button type="button" @onclick="OpenRemoveFriendDialog" class="fs-interactive fs-focusable" aria-label="Удалить из друзей" aria-haspopup="dialog" style="padding: 8px 12px; background: var(--fs-danger); color: white; border: none; cursor: pointer; border-radius: 8px; font-size: 0.9em;">Удалить из друзей</button>
+    </div>
+
+    <div id="chat-messages-scroll" style="flex: 1; min-width: 0; overflow-x: hidden; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 10px;">
+        @if (IsInitialLoading)
+        {
+            @for (var i = 0; i < 4; i++)
+            {
+                <div style="height: 64px; border-radius: 12px; background: linear-gradient(90deg, #e4ede8, #f1f6f3, #e4ede8);"></div>
+            }
+        }
+        else if (!VisibleMessages.Any())
+        {
+            <div style="text-align: center; color: var(--fs-text-faint); margin: auto;">
+                <p>@(TotalMessageCount == 0 ? "Начните разговор!" : "Ничего не найдено по текущему фильтру сообщений.")</p>
+            </div>
+        }
+        else
+        {
+            DateTime? previousMessageDay = null;
+            foreach (var message in VisibleMessages)
+            {
+                var messageDay = message.Timestamp.Date;
+                @if (previousMessageDay != messageDay)
+                {
+                    previousMessageDay = messageDay;
+                    <div role="separator" aria-label="@GetDaySeparatorText(messageDay)" style="display:flex; align-items:center; gap:12px; margin:12px 0 4px; flex-shrink:0;">
+                        <div style="flex:1; min-width:24px; height:1px; background:var(--fs-border);"></div>
+                        <span style="font-size:0.75em; color:var(--fs-text-muted); white-space:nowrap; font-weight:500;">@GetDaySeparatorText(messageDay)</span>
+                        <div style="flex:1; min-width:24px; height:1px; background:var(--fs-border);"></div>
+                    </div>
+                }
+                <div style="display: flex; justify-content: @(message.SenderId == CurrentUserId ? "flex-end" : "flex-start"); min-width: 0;">
+                    <div style="background: @(message.SenderId == CurrentUserId ? "var(--fs-bg-message-own)" : "var(--fs-bg-message-other)"); padding: 10px 15px; border-radius: 12px; max-width: 60%; min-width: 0; overflow-wrap: anywhere; word-break: break-word; border:1px solid var(--fs-border);">
+                        @if (ChatFileMessageParser.TryParse(message, out var fileMeta) && fileMeta is not null)
+                        {
+                            <div style="display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; min-width: 0;">
+                                <div style="font-size: 0.9em; flex: 1; min-width: 0; overflow: hidden;">
+                                    <div style="display:flex; align-items:center; gap:6px; min-width:0;">
+                                        <span style="overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="@fileMeta.FileName">📎 @fileMeta.FileName</span>
+                                        <span style="flex-shrink: 0; font-size:0.7em; color:white; background:@(fileMeta.Source == "p2p" ? "#6a5acd" : "#607d8b"); padding:1px 6px; border-radius:8px;">
+                                            @(fileMeta.Source == "p2p" ? "P2P" : "SERVER")
+                                        </span>
+                                    </div>
+                                    <div style="color: var(--fs-text-muted); font-size: 0.8em;">@fileMeta.FileSize байт</div>
+                                </div>
+                                <button type="button" @onclick="@(() => DownloadFile.InvokeAsync(message))" class="fs-interactive fs-focusable" aria-label="Скачать файл из сообщения"
+                                        style="flex-shrink: 0; padding: 4px 8px; background: var(--fs-green); color: white; border: none; border-radius: 6px; cursor: pointer;">
+                                    Скачать
+                                </button>
+                            </div>
+                        }
+                        else
+                        {
+                            <p style="margin: 0; font-size: 0.9em; overflow-wrap: anywhere;">@message.Content</p>
+                        }
+                        <small style="color: #708780; font-size: 0.8em;">@message.Timestamp.ToString("HH:mm")</small>
+                    </div>
+                </div>
+            }
+        }
+    </div>
+    @if (ShowScrollToBottomButton)
+    {
+        <button type="button" @onclick="ScrollToBottom" class="fs-interactive fs-focusable"
+                title="Прокрутить вниз"
+                aria-label="Прокрутить сообщения вниз"
+                style="position:absolute; right:24px; bottom:200px; z-index:4; background:var(--fs-green); color:#fff; border:none; width:40px; height:40px; border-radius:999px; cursor:pointer; box-shadow:0 6px 20px rgba(31,46,42,0.24);">
+            ↓
+        </button>
+    }
+
+    @if (_removeFriendDialogOpen)
+    {
+        <div style="position:fixed; inset:0; z-index:30; background:rgba(31,46,42,0.45); display:flex; align-items:center; justify-content:center; padding:16px;" @onclick="CloseRemoveFriendDialog" role="presentation">
+            <div style="max-width:420px; width:100%; background:var(--fs-bg-panel-soft); border-radius:12px; border:1px solid var(--fs-border); box-shadow:0 16px 48px rgba(31,46,42,0.2); padding:20px 22px;" @onclick:stopPropagation="true" role="dialog" aria-modal="true" aria-labelledby="remove-friend-title">
+                <h3 id="remove-friend-title" style="margin:0 0 10px; font-size:1.1em; color:var(--fs-text);">Удалить из друзей?</h3>
+                <p style="margin:0 0 18px; font-size:0.95em; color:var(--fs-text-muted); line-height:1.45;">
+                    Чат с <strong>@SelectedFriend.DisplayName</strong> будет закрыт, история перестанет отображаться до новой заявки в друзья.
+                </p>
+                <div style="display:flex; gap:10px; justify-content:flex-end; flex-wrap:wrap;">
+                    <button type="button" @onclick="CloseRemoveFriendDialog" class="fs-interactive fs-focusable" style="padding:8px 16px; border:1px solid var(--fs-border-soft); border-radius:8px; background:var(--fs-bg-input); cursor:pointer; color:var(--fs-text);">Отмена</button>
+                    <button type="button" @onclick="ConfirmRemoveFriendAsync" class="fs-interactive fs-focusable" style="padding:8px 16px; border:none; border-radius:8px; background:var(--fs-danger); color:white; cursor:pointer;">Удалить</button>
+                </div>
+            </div>
+        </div>
+    }
+}
+
+@code {
+    private static readonly CultureInfo Ru = CultureInfo.GetCultureInfo("ru-RU");
+    private bool _removeFriendDialogOpen;
+
+    [Parameter] public User? SelectedFriend { get; set; }
+    [Parameter] public int? CurrentUserId { get; set; }
+    [Parameter] public IEnumerable<ChatMessage> VisibleMessages { get; set; } = Array.Empty<ChatMessage>();
+    [Parameter] public int TotalMessageCount { get; set; }
+    [Parameter] public bool IsInitialLoading { get; set; }
+    [Parameter] public string MessageSearchQuery { get; set; } = "";
+    [Parameter] public EventCallback<string> MessageSearchQueryChanged { get; set; }
+    [Parameter] public bool ShowScrollToBottomButton { get; set; }
+    [Parameter] public EventCallback ScrollToBottom { get; set; }
+    [Parameter] public EventCallback RemoveFriend { get; set; }
+    [Parameter] public EventCallback<ChatMessage> DownloadFile { get; set; }
+
+    private static string GetDaySeparatorText(DateTime day)
+    {
+        var today = DateTime.Today;
+        if (day == today)
+            return "Сегодня";
+        if (day == today.AddDays(-1))
+            return "Вчера";
+        return day.ToString("d MMMM yyyy", Ru);
+    }
+
+    private void OpenRemoveFriendDialog() => _removeFriendDialogOpen = true;
+
+    private void CloseRemoveFriendDialog() => _removeFriendDialogOpen = false;
+
+    private async Task ConfirmRemoveFriendAsync()
+    {
+        await RemoveFriend.InvokeAsync();
+        _removeFriendDialogOpen = false;
+    }
+
+    private Task OnMessageSearchInput(ChangeEventArgs e) =>
+        MessageSearchQueryChanged.InvokeAsync(e.Value?.ToString() ?? "");
+}

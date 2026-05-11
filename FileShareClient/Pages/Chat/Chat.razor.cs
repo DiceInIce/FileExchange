@@ -1,6 +1,7 @@
 using FileShareClient.Models;
 using FileShareClient.Services;
 using Microsoft.AspNetCore.Components;
+using Microsoft.AspNetCore.SignalR.Client;
 using Microsoft.JSInterop;
 
 namespace FileShareClient.Pages;
@@ -42,7 +43,8 @@ public partial class Chat : IAsyncDisposable
     private bool _isNearBottom = true;
     private bool ShowScrollToBottomButton;
     private bool IsInitialLoading = true;
-    private List<ToastMessage> Toasts = new();
+    private List<ToastItem> Toasts = new();
+    private HubConnectionState _hubConnectionState = HubConnectionState.Disconnected;
 
     // Download progress tracking
     private DownloadProgress? CurrentDownloadProgress;
@@ -91,11 +93,14 @@ public partial class Chat : IAsyncDisposable
         ChatService.OnAnswerReceived += HandleAnswerReceived;
         ChatService.OnIceCandidateReceived += HandleIceCandidateReceived;
         ChatService.OnConnected += HandleRealtimeConnected;
+        ChatService.OnConnectionStateChanged += HandleConnectionStateChanged;
 
         if (!ChatService.IsConnected && ApiService.Token != null)
         {
             await ChatService.ConnectAsync(ApiService.ServerUrl, ApiService.Token);
         }
+
+        _hubConnectionState = ChatService.GetConnectionState();
     }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -154,6 +159,7 @@ public partial class Chat : IAsyncDisposable
         ChatService.OnAnswerReceived -= HandleAnswerReceived;
         ChatService.OnIceCandidateReceived -= HandleIceCandidateReceived;
         ChatService.OnConnected -= HandleRealtimeConnected;
+        ChatService.OnConnectionStateChanged -= HandleConnectionStateChanged;
 
         if (ChatService.IsConnected)
         {

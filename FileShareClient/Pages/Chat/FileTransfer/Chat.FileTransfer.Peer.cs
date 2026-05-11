@@ -163,7 +163,7 @@ public partial class Chat
     [JSInvokable]
     public Task OnP2pInboundStart(int senderId, string token, string fileName, long expectedSize)
     {
-        var norm = NormalizeP2pToken(token);
+        var norm = ChatFileMessageParser.NormalizeP2pToken(token);
         var key = P2pInboundStreamKey(senderId, norm);
         lock (_p2pInboundLock)
         {
@@ -186,7 +186,7 @@ public partial class Chat
             return Task.CompletedTask;
         }
 
-        var norm = NormalizeP2pToken(token);
+        var norm = ChatFileMessageParser.NormalizeP2pToken(token);
         var key = P2pInboundStreamKey(senderId, norm);
         lock (_p2pInboundLock)
         {
@@ -204,7 +204,7 @@ public partial class Chat
     [JSInvokable]
     public async Task OnP2pInboundComplete(int senderId, string token, string fileName, long declaredSize)
     {
-        var norm = NormalizeP2pToken(token);
+        var norm = ChatFileMessageParser.NormalizeP2pToken(token);
         var key = P2pInboundStreamKey(senderId, norm);
         MemoryStream? ms;
         lock (_p2pInboundLock)
@@ -269,9 +269,6 @@ public partial class Chat
 
         await InvokeAsync(StateHasChanged);
     }
-
-    private static string NormalizeP2pToken(string? token) =>
-        string.IsNullOrWhiteSpace(token) ? "-" : token.Trim();
 
     private static string P2pInboundStreamKey(int senderId, string normalizedToken) =>
         $"{senderId}\u001f{normalizedToken}";
