@@ -19,7 +19,8 @@ namespace FileShareServer.Extensions
                 HttpContext httpContext,
                 FriendshipService friendshipService,
                 UserService userService,
-                IHubContext<ChatHub> hubContext) =>
+                IHubContext<ChatHub> hubContext,
+                IUserConnectionManager connectionManager) =>
             {
                 var userId = httpContext.GetUserId();
                 if (userId == 0) return Results.Unauthorized();
@@ -29,18 +30,18 @@ namespace FileShareServer.Extensions
 
                 var sender = await userService.GetUserByIdAsync(userId);
                 var recipient = await userService.GetUserByIdAsync(friendId);
-                if (recipient?.ConnectionId != null)
+                foreach (var connectionId in connectionManager.GetConnections(friendId))
                 {
-                    await hubContext.Clients.Client(recipient.ConnectionId).SendAsync(AppConstants.HubMethods.SocialDataChanged);
-                    await hubContext.Clients.Client(recipient.ConnectionId).SendAsync(AppConstants.HubMethods.FriendRequestReceived, new
+                    await hubContext.Clients.Client(connectionId).SendAsync(AppConstants.HubMethods.SocialDataChanged);
+                    await hubContext.Clients.Client(connectionId).SendAsync(AppConstants.HubMethods.FriendRequestReceived, new
                     {
                         SenderId = sender?.Id ?? userId,
                         SenderName = sender?.DisplayName ?? sender?.Username ?? "Unknown"
                     });
                 }
-                if (sender?.ConnectionId != null)
+                foreach (var connectionId in connectionManager.GetConnections(userId))
                 {
-                    await hubContext.Clients.Client(sender.ConnectionId).SendAsync(AppConstants.HubMethods.SocialDataChanged);
+                    await hubContext.Clients.Client(connectionId).SendAsync(AppConstants.HubMethods.SocialDataChanged);
                 }
 
                 return Results.Ok(result);
@@ -52,7 +53,8 @@ namespace FileShareServer.Extensions
                 HttpContext httpContext,
                 FriendshipService friendshipService,
                 UserService userService,
-                IHubContext<ChatHub> hubContext) =>
+                IHubContext<ChatHub> hubContext,
+                IUserConnectionManager connectionManager) =>
             {
                 var userId = httpContext.GetUserId();
                 if (userId == 0) return Results.Unauthorized();
@@ -62,13 +64,13 @@ namespace FileShareServer.Extensions
 
                 var accepter = await userService.GetUserByIdAsync(userId);
                 var requester = await userService.GetUserByIdAsync(friendId);
-                if (accepter?.ConnectionId != null)
+                foreach (var connectionId in connectionManager.GetConnections(userId))
                 {
-                    await hubContext.Clients.Client(accepter.ConnectionId).SendAsync(AppConstants.HubMethods.SocialDataChanged);
+                    await hubContext.Clients.Client(connectionId).SendAsync(AppConstants.HubMethods.SocialDataChanged);
                 }
-                if (requester?.ConnectionId != null)
+                foreach (var connectionId in connectionManager.GetConnections(friendId))
                 {
-                    await hubContext.Clients.Client(requester.ConnectionId).SendAsync(AppConstants.HubMethods.SocialDataChanged);
+                    await hubContext.Clients.Client(connectionId).SendAsync(AppConstants.HubMethods.SocialDataChanged);
                 }
 
                 return Results.Ok();
@@ -80,7 +82,8 @@ namespace FileShareServer.Extensions
                 HttpContext httpContext,
                 FriendshipService friendshipService,
                 UserService userService,
-                IHubContext<ChatHub> hubContext) =>
+                IHubContext<ChatHub> hubContext,
+                IUserConnectionManager connectionManager) =>
             {
                 var userId = httpContext.GetUserId();
                 if (userId == 0) return Results.Unauthorized();
@@ -90,13 +93,13 @@ namespace FileShareServer.Extensions
 
                 var rejector = await userService.GetUserByIdAsync(userId);
                 var requester = await userService.GetUserByIdAsync(friendId);
-                if (rejector?.ConnectionId != null)
+                foreach (var connectionId in connectionManager.GetConnections(userId))
                 {
-                    await hubContext.Clients.Client(rejector.ConnectionId).SendAsync(AppConstants.HubMethods.SocialDataChanged);
+                    await hubContext.Clients.Client(connectionId).SendAsync(AppConstants.HubMethods.SocialDataChanged);
                 }
-                if (requester?.ConnectionId != null)
+                foreach (var connectionId in connectionManager.GetConnections(friendId))
                 {
-                    await hubContext.Clients.Client(requester.ConnectionId).SendAsync(AppConstants.HubMethods.SocialDataChanged);
+                    await hubContext.Clients.Client(connectionId).SendAsync(AppConstants.HubMethods.SocialDataChanged);
                 }
 
                 return Results.Ok();
@@ -108,7 +111,8 @@ namespace FileShareServer.Extensions
                 HttpContext httpContext,
                 FriendshipService friendshipService,
                 UserService userService,
-                IHubContext<ChatHub> hubContext) =>
+                IHubContext<ChatHub> hubContext,
+                IUserConnectionManager connectionManager) =>
             {
                 var userId = httpContext.GetUserId();
                 if (userId == 0) return Results.Unauthorized();
@@ -118,20 +122,20 @@ namespace FileShareServer.Extensions
 
                 var initiator = await userService.GetUserByIdAsync(userId);
                 var target = await userService.GetUserByIdAsync(friendId);
-                if (initiator?.ConnectionId != null)
+                foreach (var connectionId in connectionManager.GetConnections(userId))
                 {
-                    await hubContext.Clients.Client(initiator.ConnectionId).SendAsync(AppConstants.HubMethods.SocialDataChanged);
+                    await hubContext.Clients.Client(connectionId).SendAsync(AppConstants.HubMethods.SocialDataChanged);
                 }
-                if (target?.ConnectionId != null)
+                foreach (var connectionId in connectionManager.GetConnections(friendId))
                 {
-                    await hubContext.Clients.Client(target.ConnectionId).SendAsync(AppConstants.HubMethods.SocialDataChanged);
+                    await hubContext.Clients.Client(connectionId).SendAsync(AppConstants.HubMethods.SocialDataChanged);
                 }
 
                 return Results.Ok();
             })
             .WithName("RemoveFriend");
 
-            friendApi.MapGet(AppConstants.ApiRoutes.Friends.List, async (HttpContext httpContext, FriendshipService friendshipService) =>
+            friendApi.MapGet(AppConstants.ApiRoutes.Friends.List, async (HttpContext httpContext, FriendshipService friendshipService, IUserConnectionManager connectionManager) =>
             {
                 var userId = httpContext.GetUserId();
                 if (userId == 0) return Results.Unauthorized();
@@ -142,12 +146,12 @@ namespace FileShareServer.Extensions
                     Id = f.Id,
                     Username = f.Username,
                     DisplayName = f.DisplayName,
-                    IsOnline = f.IsOnline
+                    IsOnline = connectionManager.HasConnections(f.Id)
                 }));
             })
             .WithName("GetFriends");
 
-            friendApi.MapGet(AppConstants.ApiRoutes.Friends.Pending, async (HttpContext httpContext, FriendshipService friendshipService) =>
+            friendApi.MapGet(AppConstants.ApiRoutes.Friends.Pending, async (HttpContext httpContext, FriendshipService friendshipService, IUserConnectionManager connectionManager) =>
             {
                 var userId = httpContext.GetUserId();
                 if (userId == 0) return Results.Unauthorized();
@@ -164,13 +168,13 @@ namespace FileShareServer.Extensions
                             Id = f.User.Id,
                             Username = f.User.Username,
                             DisplayName = f.User.DisplayName,
-                            IsOnline = f.User.IsOnline
+                            IsOnline = connectionManager.HasConnections(f.User.Id)
                         }
                 }));
             })
             .WithName("GetPendingRequests");
 
-            friendApi.MapGet(AppConstants.ApiRoutes.Friends.Sent, async (HttpContext httpContext, FriendshipService friendshipService) =>
+            friendApi.MapGet(AppConstants.ApiRoutes.Friends.Sent, async (HttpContext httpContext, FriendshipService friendshipService, IUserConnectionManager connectionManager) =>
             {
                 var userId = httpContext.GetUserId();
                 if (userId == 0) return Results.Unauthorized();
@@ -187,7 +191,7 @@ namespace FileShareServer.Extensions
                             Id = f.Friend.Id,
                             Username = f.Friend.Username,
                             DisplayName = f.Friend.DisplayName,
-                            IsOnline = f.Friend.IsOnline
+                            IsOnline = connectionManager.HasConnections(f.Friend.Id)
                         }
                 }));
             })

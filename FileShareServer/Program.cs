@@ -2,6 +2,7 @@ using System.Data;
 using FileShareServer.Data;
 using FileShareServer.Extensions;
 using FileShareServer.Constants;
+using FileShareServer.Services;
 using Microsoft.EntityFrameworkCore;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -16,6 +17,7 @@ builder.WebHost.ConfigureKestrel(options =>
 builder.Services
     .AddApplicationDatabase(builder.Configuration, dbPath)
     .AddApplicationServices()
+    .AddSingleton<IUserConnectionManager, UserConnectionManager>()
     .AddApplicationCors()
     .AddApplicationAuthentication(builder.Configuration)
     .AddSignalR();

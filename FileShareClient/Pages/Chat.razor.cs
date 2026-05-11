@@ -185,13 +185,16 @@ public partial class Chat : IAsyncDisposable
         MessageDeliveryStatus = "Отправка...";
 
         var sentViaP2P = false;
-        try
+        if (SelectedFriend.IsOnline)
         {
-            sentViaP2P = await JS.InvokeAsync<bool>("peerTransfer.sendText", SelectedFriend.Id, content);
-        }
-        catch
-        {
-            sentViaP2P = false;
+            try
+            {
+                sentViaP2P = await JS.InvokeAsync<bool>("peerTransfer.sendText", SelectedFriend.Id, content);
+            }
+            catch
+            {
+                sentViaP2P = false;
+            }
         }
 
         if (sentViaP2P)
@@ -202,7 +205,9 @@ public partial class Chat : IAsyncDisposable
         else
         {
             await ChatService.SendMessageAsync(SelectedFriend.Id, content);
-            MessageDeliveryStatus = "Отправлено через сервер";
+            MessageDeliveryStatus = SelectedFriend.IsOnline
+                ? "Отправлено через сервер"
+                : "Отправлено через сервер (получатель офлайн)";
         }
         
         Messages.Add(new ChatMessage

@@ -12,7 +12,7 @@ namespace FileShareServer.Extensions
                 .WithName("Users")
                 .RequireAuthorization();
 
-            userApi.MapGet("/", async (UserService userService) =>
+            userApi.MapGet("/", async (UserService userService, IUserConnectionManager connectionManager) =>
             {
                 var users = await userService.GetAllUsersAsync();
                 return Results.Ok(users.Select(u => new UserDto
@@ -20,12 +20,12 @@ namespace FileShareServer.Extensions
                     Id = u.Id,
                     Username = u.Username,
                     DisplayName = u.DisplayName,
-                    IsOnline = u.IsOnline
+                    IsOnline = connectionManager.HasConnections(u.Id)
                 }));
             })
             .WithName("GetAllUsers");
 
-            userApi.MapGet("/{id}", async (int id, UserService userService) =>
+            userApi.MapGet("/{id}", async (int id, UserService userService, IUserConnectionManager connectionManager) =>
             {
                 var user = await userService.GetUserByIdAsync(id);
                 if (user == null)
@@ -39,12 +39,12 @@ namespace FileShareServer.Extensions
                     Username = user.Username,
                     Email = user.Email,
                     DisplayName = user.DisplayName,
-                    IsOnline = user.IsOnline
+                    IsOnline = connectionManager.HasConnections(user.Id)
                 });
             })
             .WithName("GetUser");
 
-            userApi.MapGet(AppConstants.ApiRoutes.Users.Search, async (string query, HttpContext httpContext, UserService userService) =>
+            userApi.MapGet(AppConstants.ApiRoutes.Users.Search, async (string query, HttpContext httpContext, UserService userService, IUserConnectionManager connectionManager) =>
             {
                 var currentUserId = httpContext.GetUserId();
                 var users = await userService.SearchUsersAsync(query);
@@ -56,7 +56,7 @@ namespace FileShareServer.Extensions
                         Id = u.Id,
                         Username = u.Username,
                         DisplayName = u.DisplayName,
-                        IsOnline = u.IsOnline
+                        IsOnline = connectionManager.HasConnections(u.Id)
                     }));
             })
             .WithName("SearchUsers")

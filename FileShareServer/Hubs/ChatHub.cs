@@ -10,13 +10,15 @@ namespace FileShareServer.Hubs
         private readonly ChatService _chatService;
         private readonly FriendshipService _friendshipService;
         private readonly AuthService _authService;
+        private readonly IUserConnectionManager _connectionManager;
 
-        public ChatHub(UserService userService, ChatService chatService, FriendshipService friendshipService, AuthService authService)
+        public ChatHub(UserService userService, ChatService chatService, FriendshipService friendshipService, AuthService authService, IUserConnectionManager connectionManager)
         {
             _userService = userService;
             _chatService = chatService;
             _friendshipService = friendshipService;
             _authService = authService;
+            _connectionManager = connectionManager;
         }
 
         public override async Task OnConnectedAsync()
@@ -27,24 +29,26 @@ namespace FileShareServer.Hubs
                 var userId = _authService.GetUserIdFromToken(token);
                 if (userId.HasValue)
                 {
-                    await _userService.SetUserOnlineAsync(userId.Value, Context.ConnectionId);
-                    Context.Items["UserId"] = userId;
+                    var becameOnline = _connectionManager.AddConnection(userId.Value, Context.ConnectionId);
+                    Context.Items["UserId"] = userId.Value;
 
                     var user = await _userService.GetUserByIdAsync(userId.Value);
-                    if (user != null)
+                    if (becameOnline)
                     {
-                        var friends = await _friendshipService.GetFriendsAsync(userId.Value);
-                        foreach (var friend in friends)
-                        {
-                            if (friend.IsOnline)
-                            {
-                                await Clients.Caller.SendAsync("UserOnline", friend.Id, friend.Username, friend.DisplayName);
-                            }
+                        await _userService.SetUserOnlineAsync(userId.Value, Context.ConnectionId);
+                    }
 
-                            if (friend.IsOnline && friend.ConnectionId != null)
-                            {
-                                await Clients.Client(friend.ConnectionId).SendAsync("UserOnline", userId, user.Username, user.DisplayName);
-                            }
+                    var friends = await _friendshipService.GetFriendsAsync(userId.Value);
+                    foreach (var friend in friends)
+                    {
+                        if (_connectionManager.HasConnections(friend.Id))
+                        {
+                            await Clients.Caller.SendAsync("UserOnline", friend.Id, friend.Username, friend.DisplayName);
+                        }
+
+                        foreach (var friendConnectionId in _connectionManager.GetConnections(friend.Id))
+                        {
+                            await Clients.Client(friendConnectionId).SendAsync("UserOnline", userId.Value, user?.Username, user?.DisplayName);
                         }
                     }
                 }
@@ -57,14 +61,25 @@ namespace FileShareServer.Hubs
         {
             if (Context.Items.TryGetValue("UserId", out var userIdObj) && userIdObj is int userId)
             {
-                await _userService.SetUserOfflineAsync(userId);
+                var becameOffline = _connectionManager.RemoveConnection(userId, Context.ConnectionId);
+
+                if (becameOffline)
+                {
+                    await _userService.SetUserOfflineAsync(userId);
+                }
 
                 var friends = await _friendshipService.GetFriendsAsync(userId);
                 foreach (var friend in friends)
                 {
-                    if (friend.IsOnline && friend.ConnectionId != null)
+                    if (_connectionManager.HasConnections(friend.Id))
                     {
-                        await Clients.Client(friend.ConnectionId).SendAsync("UserOffline", userId);
+                        foreach (var friendConnectionId in _connectionManager.GetConnections(friend.Id))
+                        {
+                            if (becameOffline)
+                            {
+                                await Clients.Client(friendConnectionId).SendAsync("UserOffline", userId);
+                            }
+                        }
                     }
                 }
             }
@@ -83,12 +98,11 @@ namespace FileShareServer.Hubs
                 }
 
                 var message = await _chatService.SendMessageAsync(senderId, receiverId, content, MessageType.Text);
-                
-                var receiver = await _userService.GetUserByIdAsync(receiverId);
-                if (receiver?.ConnectionId != null)
+                var sender = await _userService.GetUserByIdAsync(senderId);
+                var receiverConnectionIds = _connectionManager.GetConnections(receiverId);
+                foreach (var connectionId in receiverConnectionIds)
                 {
-                    var sender = await _userService.GetUserByIdAsync(senderId);
-                    await Clients.Client(receiver.ConnectionId).SendAsync("ReceiveMessage", new
+                    await Clients.Client(connectionId).SendAsync("ReceiveMessage", new
                     {
                         message.Id,
                         SenderId = senderId,
@@ -112,11 +126,11 @@ namespace FileShareServer.Hubs
                     return;
                 }
 
-                var receiver = await _userService.GetUserByIdAsync(receiverId);
-                if (receiver?.ConnectionId != null)
+                var sender = await _userService.GetUserByIdAsync(senderId);
+                var receiverConnectionIds = _connectionManager.GetConnections(receiverId);
+                foreach (var connectionId in receiverConnectionIds)
                 {
-                    var sender = await _userService.GetUserByIdAsync(senderId);
-                    await Clients.Client(receiver.ConnectionId).SendAsync("ReceiveOffer", new
+                    await Clients.Client(connectionId).SendAsync("ReceiveOffer", new
                     {
                         SenderId = senderId,
                         SenderName = sender?.Username,
@@ -136,10 +150,10 @@ namespace FileShareServer.Hubs
                     return;
                 }
 
-                var receiver = await _userService.GetUserByIdAsync(receiverId);
-                if (receiver?.ConnectionId != null)
+                var receiverConnectionIds = _connectionManager.GetConnections(receiverId);
+                foreach (var connectionId in receiverConnectionIds)
                 {
-                    await Clients.Client(receiver.ConnectionId).SendAsync("ReceiveAnswer", new
+                    await Clients.Client(connectionId).SendAsync("ReceiveAnswer", new
                     {
                         SenderId = senderId,
                         Answer = answer
@@ -158,10 +172,10 @@ namespace FileShareServer.Hubs
                     return;
                 }
 
-                var receiver = await _userService.GetUserByIdAsync(receiverId);
-                if (receiver?.ConnectionId != null)
+                var receiverConnectionIds = _connectionManager.GetConnections(receiverId);
+                foreach (var connectionId in receiverConnectionIds)
                 {
-                    await Clients.Client(receiver.ConnectionId).SendAsync("ReceiveIceCandidate", new
+                    await Clients.Client(connectionId).SendAsync("ReceiveIceCandidate", new
                     {
                         SenderId = senderId,
                         Candidate = candidate
@@ -180,11 +194,11 @@ namespace FileShareServer.Hubs
                     return;
                 }
 
-                var receiver = await _userService.GetUserByIdAsync(receiverId);
-                if (receiver?.ConnectionId != null)
+                var sender = await _userService.GetUserByIdAsync(senderId);
+                var receiverConnectionIds = _connectionManager.GetConnections(receiverId);
+                foreach (var connectionId in receiverConnectionIds)
                 {
-                    var sender = await _userService.GetUserByIdAsync(senderId);
-                    await Clients.Client(receiver.ConnectionId).SendAsync("FileTransferRequest", new
+                    await Clients.Client(connectionId).SendAsync("FileTransferRequest", new
                     {
                         SenderId = senderId,
                         SenderName = sender?.Username,

@@ -26,7 +26,8 @@ namespace FileShareServer.Extensions
                 ChatService chatService,
                 FriendshipService friendshipService,
                 UserService userService,
-                IHubContext<ChatHub> hubContext) =>
+                IHubContext<ChatHub> hubContext,
+                IUserConnectionManager connectionManager) =>
             {
                 var userId = httpContext.GetUserId();
                 if (userId == 0) return Results.Unauthorized();
@@ -76,9 +77,9 @@ namespace FileShareServer.Extensions
 
                 var sender = await userService.GetUserByIdAsync(userId);
                 var receiver = await userService.GetUserByIdAsync(receiverId);
-                if (receiver?.ConnectionId != null)
+                foreach (var connectionId in connectionManager.GetConnections(receiverId))
                 {
-                    await hubContext.Clients.Client(receiver.ConnectionId).SendAsync(AppConstants.HubMethods.FileTransferAvailable, new
+                    await hubContext.Clients.Client(connectionId).SendAsync(AppConstants.HubMethods.FileTransferAvailable, new
                     {
                         transfer.Id,
                         SenderId = userId,
@@ -86,7 +87,7 @@ namespace FileShareServer.Extensions
                         transfer.FileName,
                         transfer.FileSize
                     });
-                    await hubContext.Clients.Client(receiver.ConnectionId).SendAsync(AppConstants.HubMethods.ReceiveMessage, new
+                    await hubContext.Clients.Client(connectionId).SendAsync(AppConstants.HubMethods.ReceiveMessage, new
                     {
                         chatMessage.Id,
                         SenderId = userId,
@@ -95,11 +96,11 @@ namespace FileShareServer.Extensions
                         chatMessage.Timestamp,
                         Type = (int)chatMessage.Type
                     });
-                    await hubContext.Clients.Client(receiver.ConnectionId).SendAsync(AppConstants.HubMethods.SocialDataChanged);
+                    await hubContext.Clients.Client(connectionId).SendAsync(AppConstants.HubMethods.SocialDataChanged);
                 }
-                if (sender?.ConnectionId != null)
+                foreach (var connectionId in connectionManager.GetConnections(userId))
                 {
-                    await hubContext.Clients.Client(sender.ConnectionId).SendAsync(AppConstants.HubMethods.SocialDataChanged);
+                    await hubContext.Clients.Client(connectionId).SendAsync(AppConstants.HubMethods.SocialDataChanged);
                 }
 
                 return Results.Ok(new { transfer.Id, transfer.FileName, transfer.FileSize });

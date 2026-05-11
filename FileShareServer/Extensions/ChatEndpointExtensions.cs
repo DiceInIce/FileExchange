@@ -86,6 +86,7 @@ namespace FileShareServer.Extensions
                 FriendshipService friendshipService,
                 UserService userService,
                 IHubContext<ChatHub> hubContext,
+                IUserConnectionManager connectionManager,
                 StoreFileMessageRequest request) =>
             {
                 var userId = httpContext.GetUserId();
@@ -110,9 +111,9 @@ namespace FileShareServer.Extensions
 
                 var sender = await userService.GetUserByIdAsync(userId);
                 var receiver = await userService.GetUserByIdAsync(friendId);
-                if (receiver?.ConnectionId != null)
+                foreach (var connectionId in connectionManager.GetConnections(friendId))
                 {
-                    await hubContext.Clients.Client(receiver.ConnectionId).SendAsync(AppConstants.HubMethods.ReceiveMessage, new
+                    await hubContext.Clients.Client(connectionId).SendAsync(AppConstants.HubMethods.ReceiveMessage, new
                     {
                         message.Id,
                         SenderId = userId,
@@ -121,11 +122,11 @@ namespace FileShareServer.Extensions
                         message.Timestamp,
                         Type = (int)message.Type
                     });
-                    await hubContext.Clients.Client(receiver.ConnectionId).SendAsync(AppConstants.HubMethods.SocialDataChanged);
+                    await hubContext.Clients.Client(connectionId).SendAsync(AppConstants.HubMethods.SocialDataChanged);
                 }
-                if (sender?.ConnectionId != null)
+                foreach (var connectionId in connectionManager.GetConnections(userId))
                 {
-                    await hubContext.Clients.Client(sender.ConnectionId).SendAsync(AppConstants.HubMethods.SocialDataChanged);
+                    await hubContext.Clients.Client(connectionId).SendAsync(AppConstants.HubMethods.SocialDataChanged);
                 }
 
                 return Results.Ok(new { message.Id });
