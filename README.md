@@ -74,7 +74,7 @@ dotnet run
 |------|------------|
 | [ARCHITECTURE_APPLICATION_LIFECYCLE.md](ARCHITECTURE_APPLICATION_LIFECYCLE.md) | Жизненный цикл: логин → друзья → сообщения → файлы; REST и хаб; Mermaid-диаграммы |
 | [PROGRAM_OVERVIEW.md](PROGRAM_OVERVIEW.md) | Обзор программы и сценарии (может частично пересекаться с архитектурным документом) |
-| [PERFORMANCE_IMPROVEMENTS.md](PERFORMANCE_IMPROVEMENTS.md) | Заметки по оптимизациям передачи данных |
+
 
 ## Структура репозитория
 
