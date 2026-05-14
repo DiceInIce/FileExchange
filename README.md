@@ -1,34 +1,33 @@
-# FileShare
+# FileExchange / FileShare
 
-FileShare — оптимизированное desktop-приложение для общения и обмена файлами между друзьями (Windows, Blazor Hybrid + ASP.NET Core). Поддерживает P2P-передачу через WebRTC и серверный relay с минимальным потреблением памяти.
+Desktop-клиент для Windows и backend-сервер: общение и обмен файлами только между **взаимными друзьями**. Реалтайм — **SignalR**; файлы — **через сервер** (до 100 МБ) и/или **P2P** (WebRTC Data Channel) с сигналингом через тот же хаб.
 
-## Ключевые возможности
+## Возможности
 
-- **Авторизация**: Регистрация/логин с JWT + bcrypt
-- **Система друзей**: Поиск, заявки, принятие, удаление (реалтайм)
-- **Чат**: История сообщений с непрочитанными счетчиками
-- **Передача файлов** (до 100 MB):
-  - `AUTO`: P2P → fallback на SERVER
-  - `P2P only`: Прямой канал через WebRTC DataChannel
-  - `SERVER only`: Через сервер
-  - Визуальная метка источника: `P2P` или `SERVER`
-- **Оптимизированная передача**: Потоковые загрузки, бинарный формат (вместо Base64)
+- **Учётные записи:** регистрация и вход, JWT + BCrypt на сервере.
+- **Друзья:** поиск пользователей, заявка, принятие/отклонение, удаление из друзей; уведомления в реальном времени (`SocialDataChanged`, `FriendRequestReceived`).
+- **Чат:** история по собеседнику, непрочитанные, пометка прочитанным; текст может уходить по P2P (с догоном в БД) или через хаб `SendMessage`.
+- **Файлы:** режимы **AUTO** (сначала P2P, при неудаче — сервер, если файл ≤ 100 МБ), **P2P**, **SERVER**; drag-and-drop и выбор файла; скачивание серверных вложений по `transferId` из сообщения; входящие на сервере — список **inbox**.
 
 ## Технологии
 
-- **Client**: .NET 9, WinForms + BlazorWebView, SignalR, WebRTC DataChannel (JS interop)
-- **Server**: ASP.NET Core 9.0, Minimal API, SignalR Hub, Entity Framework Core, SQLite
-- **Auth**: JWT Bearer + bcrypt
-- **Оптимизация**: Потоковые загрузки (File.OpenRead), binary transfers (ArrayBuffer), 64KB чанкирование
+| Компонент | Стек |
+|-----------|------|
+| **FileShareClient** | .NET 10 (`net10.0-windows`), WinForms + Blazor WebView, SignalR Client, JS (`wwwroot/js/peerTransfer.js`, `chatFileDrop.js`, `chatComposer.js`) |
+| **FileShareServer** | .NET 10 (`net10.0`), Minimal API, SignalR, EF Core + SQLite, JWT Bearer |
 
-## Как запустить
+Решение: `FileExchange.sln`.
+
+## Быстрый старт
 
 ### Требования
 
-- .NET SDK (рекомендуется установленный у вас SDK, которым проект уже собирается).
-- Windows 10/11 (для клиента).
+- [.NET SDK 10](https://dotnet.microsoft.com/download) (в репозитории закреплена версия в [`global.json`](global.json), сейчас `10.0.203`).
+- Windows 10/11 — для запуска клиента.
 
-### 1) Сервер
+Пакеты Microsoft для сервера и клиента выровнены по линии **10.0.0**; JWT-библиотеки (`System.IdentityModel.Tokens.Jwt`, `Microsoft.IdentityModel.Tokens`) остаются на совместимой линии **8.8.x** (отдельный цикл версий NuGet, не равный номеру TFM).
+
+### Сервер
 
 ```bash
 cd FileShareServer
@@ -36,11 +35,11 @@ dotnet restore
 dotnet run
 ```
 
-Сервер слушает:
-- `https://localhost:7217`
-- `http://localhost:5217`
+URL приложения задаётся в `FileShareServer/Properties/launchSettings.json` (`applicationUrl`). Для локальной разработки обычно удобно указать, например, `https://localhost:7217;http://localhost:5217`.
 
-### 2) Клиент
+В `appsettings.json` должен быть задан секрет JWT (`Jwt:Secret` и при необходимости `Jwt:Issuer` / `Jwt:Audience` — см. `AuthService`). База SQLite создаётся рядом с приложением: `fileshare.db`; загруженные файлы — папка `uploads/` в корне сервера.
+
+### Клиент
 
 ```bash
 cd FileShareClient
@@ -48,48 +47,43 @@ dotnet restore
 dotnet run
 ```
 
-## Актуальные API (основные)
+**Важно:** базовый URL API и хаба задаётся в `FileShareClient/Services/ApiService.cs` (`ServerUrl`). Он должен совпадать с тем, на чём реально слушает сервер (схема `https`/`http`, хост, порт). Для разработки в коде отключена проверка TLS-сертификата сервера у `HttpClient` и SignalR — только для dev.
 
-### Auth
-- `POST /api/auth/register`
-- `POST /api/auth/login`
+## REST API (кратко)
 
-### Users
-- `GET /api/users`
-- `GET /api/users/{id}`
-- `GET /api/users/search/{query}`
+Префикс: `/api`. Защищённые маршруты требуют заголовок `Authorization: Bearer <token>`. Исключение: `/api/auth/register` и `/api/auth/login`.
 
-### Friends
-- `POST /api/friends/request/{friendId}`
-- `POST /api/friends/accept/{friendId}`
-- `POST /api/friends/reject/{friendId}`
-- `DELETE /api/friends/remove/{friendId}`
-- `GET /api/friends/list`
-- `GET /api/friends/pending`
+| Область | Методы |
+|---------|--------|
+| **Auth** | `POST /auth/register`, `POST /auth/login` |
+| **Users** | `GET /users`, `GET /users/{id}`, `GET /users/search/{query}` |
+| **Friends** | `POST /friends/request/{friendId}`, `POST /friends/accept/{friendId}`, `POST /friends/reject/{friendId}`, `DELETE /friends/remove/{friendId}`, `GET /friends/list`, `GET /friends/pending`, `GET /friends/sent` |
+| **Chat** | `GET /chat/conversation/{friendId}`, `GET /chat/unread`, `POST /chat/mark-read/{messageId}`, `POST /chat/store/{friendId}`, `POST /chat/store-file/{friendId}` |
+| **Files** | `POST /files/upload/{receiverId}`, `GET /files/inbox`, `GET /files/download/{id}` |
 
-### Chat
-- `GET /api/chat/conversation/{friendId}`
-- `GET /api/chat/unread`
-- `POST /api/chat/mark-read/{messageId}`
-- `POST /api/chat/store/{friendId}` (сохранение текстового сообщения)
-- `POST /api/chat/store-file/{friendId}` (сохранение файлового сообщения-метаданных)
+Полная таблица и цепочки вызовов: **[ARCHITECTURE_APPLICATION_LIFECYCLE.md](ARCHITECTURE_APPLICATION_LIFECYCLE.md)**.
 
-### Files
-- `POST /api/files/upload/{receiverId}` (server relay)
-- `GET /api/files/download/{id}`
+## SignalR
 
-### SignalR
-- Hub: `/chathub`
-- Сигналинг WebRTC: offer/answer/ice.
-Архитектура передачи файлов
+- **URL хаба:** `{ServerUrl}/chathub?access_token=<JWT>` (токен в query — так настроен приём JWT для WebSocket на сервере).
+- Сообщения чата, онлайн/офлайн друзей, заявки в друзья, готовность серверного файла, сигналинг WebRTC (`SendOffer` / `SendAnswer` / `SendIceCandidate`, зеркальные события на клиенте).
 
-### Режимы
-- **AUTO**: P2P DataChannel → fallback на SERVER (если недоступен)
-- **P2P only**: Прямой WebRTC DataChannel (без сервера)
-- **SERVER only**: HTTP multipart upload/download через сервер
+## Документация
 
-## Документация для презентации
+| Файл | Содержание |
+|------|------------|
+| [ARCHITECTURE_APPLICATION_LIFECYCLE.md](ARCHITECTURE_APPLICATION_LIFECYCLE.md) | Жизненный цикл: логин → друзья → сообщения → файлы; REST и хаб; Mermaid-диаграммы |
+| [PROGRAM_OVERVIEW.md](PROGRAM_OVERVIEW.md) | Обзор программы и сценарии (может частично пересекаться с архитектурным документом) |
+| [PERFORMANCE_IMPROVEMENTS.md](PERFORMANCE_IMPROVEMENTS.md) | Заметки по оптимизациям передачи данных |
 
-Подробный документ с архитектурой, потоками данных и сценариями:
+## Структура репозитория
 
-- `PROGRAM_OVERVIEW.md`
+```
+FileExchange.sln
+global.json                 # закрепление SDK для единообразной сборки
+FileShareClient/            # WinForms + Blazor UI, ApiService, ChatService
+FileShareServer/            # API, ChatHub, EF, SQLite, uploads/
+ARCHITECTURE_APPLICATION_LIFECYCLE.md
+PROGRAM_OVERVIEW.md
+README.md
+```

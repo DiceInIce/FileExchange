@@ -184,5 +184,17 @@
     }
   },
   "active": "891d7cd021f36a12",
-  "lastOpenFiles": []
+  "lastOpenFiles": [
+    "FileShareClient/obj/Debug/net10.0-windows/FileShareClient.csproj.FileListAbsolute.txt",
+    "FileShareClient/bin/Debug/net10.0-windows/FileShareClient.pdb",
+    "FileShareClient/obj/Debug/net10.0-windows/ref/FileShareClient.dll",
+    "FileShareClient/bin/Debug/net10.0-windows/FileShareClient.dll",
+    "FileShareClient/bin/Debug/net10.0-windows/FileShareClient.runtimeconfig.json",
+    "FileShareClient/obj/Debug/net10.0-windows/FileShareClient.genruntimeconfig.cache",
+    "FileShareClient/bin/Debug/net10.0-windows/FileShareClient.deps.json",
+    "FileShareClient/bin/Debug/net10.0-windows/FileShareClient.staticwebassets.endpoints.json",
+    "FileShareClient/bin/Debug/net10.0-windows/FileShareClient.exe",
+    "FileShareClient/bin/Debug/net10.0-windows/FileShareClient.staticwebassets.runtime.json",
+    "FileShareClient/obj/Debug/net10.0-windows/FileShar.636E1FD2.Up2Date"
+  ]
 }
